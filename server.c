@@ -5,6 +5,10 @@ char server_ip[16] = DEFAULT_ADDRESS;
 char config_path[100] = DEFAULT_PATH;
 const int port = 53;
 
+extern trie list_trie[65535];
+int list_size = 0;
+extern int char_map[256];
+
 static void print_info() {
     const char date[] = __DATE__;
     const char time[] = __TIME__;
@@ -17,17 +21,13 @@ static void print_info() {
     printf("Debug level %d.\n", debug_mode);
 
     printf("Bind UDP port %d ...", port);
-    if(bind_port())
-        printf("OK.\n");
-    else {
+    if(bind_port() == 0) {
         printf("Failed.\n");
         exit(1);
     }
 
     printf("Try to load table \"%s\" ...", config_path);
-    if(load_config())
-        printf("OK.\n");
-    else{
+    if(load_config() == 0) {
         printf("Failed.\n");
         exit(1);
     }
@@ -65,6 +65,83 @@ int bind_port() {
     return 0;
 }
 
+static void creat_char_to_int_Map() {
+    /****** 构建域名字符到有限数字的映射表
+     * 0 - 9 : 0 - 9
+     * a - z : 10 - 35
+     * A - Z : 36 - 61
+     * '-' : 62
+     * '.' : 63
+     * ******/
+    int index, i;
+    for (i = 0; i < 128; i++) {
+        if((char)i >= '0' && (char)i <= '9') {
+            index = i - '0';
+        }
+        else if((char)i >= 'a' && (char)i <= 'z') {
+            index = i - 'a' + 10;
+        }
+        else if((char)i >= 'A' && (char)i <= 'Z') {
+            index = i - 'A' + 36;
+        }
+        else if((char)i == '-') {
+            index = 62;
+        }
+        else if((char)i == '.') {
+            index = 63;
+        }
+        char_map[i] = index;
+    }
+}
+
 int load_config() {
-    return 0;
+    uint8_t IPAddr[4];
+    char domain[300];
+
+    FILE* config_file_ptr = fopen(config_path, "r");
+    if (!config_file_ptr) {
+        return FAIL;
+    }
+    else {
+        printf("OK.\n");
+        int num = 0;
+        creat_char_to_int_Map();
+
+        while(!feof(config_file_ptr)) {
+            fscanf(config_file_ptr, "%hhu.%hhu.%hhu.%hhu", IPAddr, IPAddr + 1, IPAddr + 2, IPAddr + 3);
+            fscanf(config_file_ptr, "%s", domain);
+
+            add_host_info(domain, IPAddr);
+            num++;
+
+            if(debug_mode == DEBUG_MODE_2) {
+                printf("\t%d: %hhu.%hhu.%hhu.%hhu\t %s\n", num, IPAddr[0], IPAddr[1], IPAddr[2], IPAddr[3], domain);
+            }
+        }
+
+        printf("Load %d names.\n", num);
+        return SUCCESS;
+    }
+}
+
+void add_host_info(char domain[], uint8_t IPAddr[]){
+    int domain_len = strlen(domain);
+    int index = 0;
+
+    for (int i = 0; i < domain_len; i++) {
+        int num = char_map[domain[i]];
+
+        if (list_trie[index].val[num] == 0) {
+            list_size++;
+            list_trie[index].val[num] = list_size;
+        }
+        list_trie[list_trie[index].val[num]].pre = index;
+        index = list_trie[index].val[num];
+    }
+
+    for (int i = 0; i < 4; i++) {
+        list_trie[index].IP[i] = IPAddr[i];
+    }
+
+    list_trie[index].isEnd = TRUE;
 }
