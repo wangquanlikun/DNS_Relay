@@ -1,6 +1,10 @@
 #ifndef DATA_H
 #define DATA_H
 
+#include <stdint.h>
+#include <WinSock2.h>
+#include <ws2tcpip.h>
+
 #define TRUE 1
 #define FALSE 0
 #define SUCCESS 1
@@ -29,6 +33,11 @@ typedef struct trie_node {
 } trie;
 trie list_trie[65535]; //字典树
 extern int list_size;
-int map[256]; //字符映射表
+extern int map[256]; //字符映射表
+
+SOCKET server_socket;
+SOCKET client_socket;
+SOCKADDR_IN client_addr;
+SOCKADDR_IN server_addr;
 
 #endif

@@ -7,13 +7,13 @@ const int port = 53;
 
 extern trie list_trie[65535];
 int list_size = 0;
-extern int char_map[256];
+int char_map[256];
 
 static void print_info() {
     const char date[] = __DATE__;
     const char time[] = __TIME__;
 
-    printf("SourceCode at https://github.com/wangquanlikun/DNS_Relay. Fork and Star\n");
+    printf("SourceCode at https://github.com/wangquanlikun/DNS_Relay. Fork and Star\n\n");
     printf("DNSRELAY, Version %s, Build: %s %s\n", VERSION, date, time);
     printf("Usage: dnsrelay [-d | -dd] [<dns-server>] [<db-file>]\n\n");
     
@@ -62,7 +62,42 @@ void set_parameter(int argc, char *argv[]) {
 }
 
 int bind_port() {
-    return 0;
+    #ifdef _WIN32
+
+    WORD wVersion = MAKEWORD(2, 2);
+    WSADATA wsaData;
+    if(WSAStartup(wVersion, &wsaData) != 0) {
+        return FAIL;
+    }
+
+    client_socket = socket(AF_INET, SOCK_DGRAM, 0);
+    server_socket = socket(AF_INET, SOCK_DGRAM, 0);
+
+    memset(&client_addr, 0, sizeof(client_addr));
+    memset(&server_addr, 0, sizeof(server_addr));
+
+    client_addr.sin_family = AF_INET;
+    client_addr.sin_addr.s_addr = INADDR_ANY;
+    client_addr.sin_port = htons(port);
+
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_addr.s_addr = inet_addr(server_ip);
+    server_addr.sin_port = htons(port);
+
+    const int reuse = 1;
+    if(setsockopt(client_socket, SOL_SOCKET, SO_REUSEADDR, (const char*)&reuse, sizeof(reuse)) == SOCKET_ERROR) {
+        return FAIL;
+    }
+
+    if(bind(client_socket, (SOCKADDR*)&client_addr, sizeof(client_addr)) == SOCKET_ERROR) {
+        return FAIL;
+    }
+    printf("OK.\n");
+    return SUCCESS;
+
+    #else
+
+    #endif
 }
 
 static void creat_char_to_int_Map() {
@@ -96,6 +131,7 @@ static void creat_char_to_int_Map() {
 
 int load_config() {
     uint8_t IPAddr[4];
+    char addr[16];
     char domain[300];
 
     FILE* config_file_ptr = fopen(config_path, "r");
@@ -108,8 +144,22 @@ int load_config() {
         creat_char_to_int_Map();
 
         while(!feof(config_file_ptr)) {
-            fscanf(config_file_ptr, "%hhu.%hhu.%hhu.%hhu", IPAddr, IPAddr + 1, IPAddr + 2, IPAddr + 3);
+            fscanf(config_file_ptr, "%s", addr);
             fscanf(config_file_ptr, "%s", domain);
+
+            memset(IPAddr, 0, sizeof(IPAddr));
+            int i, j;
+            for (i = 0, j = 0; i < 4 && j < 16; j++) {
+                if(addr[j] == '.') {
+                    i++;
+                }
+                else if (addr[j] == '\0') {
+                    break;
+                }
+                else {
+                    IPAddr[i] = (uint8_t)(IPAddr[i] * 10 + (addr[j] - '0'));
+                }
+            }
 
             add_host_info(domain, IPAddr);
             num++;
@@ -120,6 +170,7 @@ int load_config() {
         }
 
         printf("Load %d names.\n", num);
+        fclose(config_file_ptr);
         return SUCCESS;
     }
 }
