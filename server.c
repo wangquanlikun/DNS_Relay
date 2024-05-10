@@ -31,9 +31,6 @@ static void print_info() {
         printf("Failed.\n");
         exit(1);
     }
-
-    if(debug_mode == DEBUG_MODE_2) {}
-
 }
 
 void set_parameter(int argc, char *argv[]) {
@@ -143,10 +140,10 @@ int load_config() {
         int num = 0;
         creat_char_to_int_Map();
 
-        while(!feof(config_file_ptr)) {
-            fscanf(config_file_ptr, "%s", addr);
-            fscanf(config_file_ptr, "%s", domain);
+        fscanf(config_file_ptr, "%s", addr);
+        fscanf(config_file_ptr, "%s", domain);
 
+        while(!feof(config_file_ptr)) {
             memset(IPAddr, 0, sizeof(IPAddr));
             int i, j;
             for (i = 0, j = 0; i < 4 && j < 16; j++) {
@@ -167,6 +164,9 @@ int load_config() {
             if(debug_mode == DEBUG_MODE_2) {
                 printf("\t%d: %hhu.%hhu.%hhu.%hhu\t %s\n", num, IPAddr[0], IPAddr[1], IPAddr[2], IPAddr[3], domain);
             }
+
+            fscanf(config_file_ptr, "%s", addr);
+            fscanf(config_file_ptr, "%s", domain);
         }
 
         printf("Load %d names.\n", num);
@@ -195,4 +195,64 @@ void add_host_info(char domain[], uint8_t IPAddr[]){
     }
 
     list_trie[index].isEnd = TRUE;
+}
+
+void init_data() {
+    // 初始化ID转换表
+    for (int i = 0; i < MAX_ID_LIST; i++)
+    {
+        ID_list[i].client_ID = 0;
+        ID_list[i].expire_time = 0;
+        memset(&(ID_list[i].client_addr), 0, sizeof(struct sockaddr_in));
+    }
+
+    // 初始化LRU缓存 -- 链表头尾指针
+    head = malloc(sizeof(struct lru_node));
+    head->next = NULL;
+    tail = head;
+}
+
+void run_server() {
+    #ifdef _WIN32
+
+    u_long nonBlockingMode = 1;
+    int ser_result = ioctlsocket(server_socket, FIONBIO, &nonBlockingMode);
+    int cli_result = ioctlsocket(client_socket, FIONBIO, &nonBlockingMode);
+
+    if(ser_result == SOCKET_ERROR || cli_result == SOCKET_ERROR) {
+        printf("Set non-blocking mode failed.\n");
+        closesocket(server_socket);
+        closesocket(client_socket);
+        WSACleanup();
+        exit(1);
+    }
+
+    #else
+
+    #endif
+
+    // success
+    while (1) {
+        receive_client();
+        receive_server();
+    }
+}
+
+void debug_print(char output_info[]) {
+    if(debug_mode == NO_DEBUG)
+        return;
+    else {
+        char c = output_info[0];
+        int str_len = strlen(output_info);
+        for (int i = 0; i < str_len; i++) {
+            if(output_info[i] == '#') {
+                if (debug_mode == DEBUG_MODE_1)
+                    break;
+                else if (debug_mode == DEBUG_MODE_2)
+                    putchar('\n');
+            }
+        }
+        putchar('\n');
+        return;
+    }
 }

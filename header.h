@@ -1,5 +1,5 @@
-#ifndef DNS_HEADER
-#define DNS_HEADER
+#ifndef DNS_HEADER_H
+#define DNS_HEADER_H
 
 #include <string.h>
 #include <stdio.h>

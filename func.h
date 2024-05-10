@@ -10,4 +10,11 @@ int load_config(); //加载配置文件
 
 void add_host_info(char domain[], uint8_t IPAddr[]); //添加HOST信息
 
+void init_data(); //初始化数据
+void debug_print(char output_info[]); //调试输出
+
+void run_server(); 
+void receive_client();
+void receive_server();
+
 #endif

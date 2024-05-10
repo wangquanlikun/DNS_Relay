@@ -23,6 +23,8 @@ extern char server_ip[16];
 #define DEFAULT_PATH "./dnsrelay.txt"
 extern char config_path[100];
 
+#define BUFFER_SIZE 1500
+
 extern const int port;
 
 typedef struct trie_node { 
@@ -39,5 +41,23 @@ SOCKET server_socket;
 SOCKET client_socket;
 SOCKADDR_IN client_addr;
 SOCKADDR_IN server_addr;
+
+extern int addr_len;
+
+typedef struct lru_node {
+	uint8_t IP[4];
+	char domain[300];
+	struct lru_node* next;
+} LRU_NODE; // LRU缓存
+struct lru_node* head;
+struct lru_node* tail;
+
+typedef struct {
+	uint16_t client_ID;
+	int expire_time;
+	struct sockaddr_in client_addr;
+} ID_conversion;
+#define MAX_ID_LIST 255
+ID_conversion ID_list[MAX_ID_LIST]; // ID转换表
 
 #endif
