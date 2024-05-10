@@ -17,4 +17,10 @@ void run_server();
 void receive_client();
 void receive_server();
 
+void get_dns_msg(char recv_buffer[], DNS_DATA* dns_msg); //解析DNS报文
+void set_dns_msg(char ansTo_buffer[], DNS_DATA* dns_msg, uint8_t ip_addr[]); //设置DNS报文
+
+int find_cache(char domain[], uint8_t ip_addr[]); //查找缓存
+void update_cache(uint8_t ip_addr[4], char domain[]); //更新缓存
+int find_trie(char domain[], uint8_t ip_addr[]); //查找字典树
 #endif

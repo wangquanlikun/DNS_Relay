@@ -49,8 +49,9 @@ typedef struct lru_node {
 	char domain[300];
 	struct lru_node* next;
 } LRU_NODE; // LRU缓存
-struct lru_node* head;
-struct lru_node* tail;
+struct lru_node* lru_head;
+extern int cache_size;
+#define MAX_CACHE_SIZE 100
 
 typedef struct {
 	uint16_t client_ID;

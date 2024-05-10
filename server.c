@@ -206,10 +206,9 @@ void init_data() {
         memset(&(ID_list[i].client_addr), 0, sizeof(struct sockaddr_in));
     }
 
-    // 初始化LRU缓存 -- 链表头尾指针
-    head = malloc(sizeof(struct lru_node));
-    head->next = NULL;
-    tail = head;
+    // 初始化LRU缓存 -- 链表头指针
+    lru_head = malloc(sizeof(struct lru_node)); // 带头结点
+    lru_head->next = NULL;
 }
 
 void run_server() {
@@ -242,17 +241,22 @@ void debug_print(char output_info[]) {
     if(debug_mode == NO_DEBUG)
         return;
     else {
+        int i;
         char c = output_info[0];
         int str_len = strlen(output_info);
-        for (int i = 0; i < str_len; i++) {
-            if(output_info[i] == '#') {
+        for (i = 0; i < str_len; i++) {
+            c = output_info[i];
+            if(c == '#') {
                 if (debug_mode == DEBUG_MODE_1)
                     break;
-                else if (debug_mode == DEBUG_MODE_2)
+                else if (debug_mode == DEBUG_MODE_2 && i != 0)
                     putchar('\n');
             }
+            else
+                putchar(c);
         }
-        putchar('\n');
+        if((debug_mode == DEBUG_MODE_1 && i != 0)|| (debug_mode == DEBUG_MODE_2 && c != '#'))
+            putchar('\n');
         return;
     }
 }
