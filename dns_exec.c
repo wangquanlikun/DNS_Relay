@@ -4,6 +4,7 @@
 int cache_size = 0;
 int addr_len = sizeof(struct sockaddr_in);
 int listen_num = 0;
+extern int char_map[256];
 
 void receive_client() { //接收客户端DNS，查询，回复或上交远程DNS服务器处理
     char recv_buffer[BUFFER_SIZE];
@@ -200,7 +201,7 @@ int find_trie(char domain[], uint8_t ip_addr[]) {
     int index = 0;
 
     for (int i = 0; i < domain_len; i++) {
-        int num = map[domain[i]];
+        int num = char_map[domain[i]];
 
         if (list_trie[index].val[num] == 0) {
             debug_print("Domain not found in host->trie.");

@@ -2,6 +2,7 @@
 #define FUNC_H
 
 #include <stdint.h>
+#include "dns_data.h"
 
 void set_parameter(int argc, char *argv[]); //设置程序命令参数
 
