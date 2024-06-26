@@ -223,8 +223,8 @@ void run_server() {
     #ifdef _WIN32
 
     if(mode == DEFAULT_MODE) {
-        u_long nonBlockingMode = 0;
-        int ser_result = ioctlsocket(server_socket, FIONBIO, &nonBlockingMode); // 设置为阻塞模式
+        u_long nonBlockingMode = 1;
+        int ser_result = ioctlsocket(server_socket, FIONBIO, &nonBlockingMode); // 设置为非阻塞模式
         int cli_result = ioctlsocket(client_socket, FIONBIO, &nonBlockingMode);
 
         if(ser_result == SOCKET_ERROR || cli_result == SOCKET_ERROR) {
@@ -241,27 +241,31 @@ void run_server() {
         }
     }
     else if(mode == POLL_MODE) {
-        struct pollfd fds[2];
+        fd_set readfds;
+        struct timeval tv;
         
         while (1) {
-            fds[0].fd = client_socket;
-            fds[0].events = POLLIN;
-            fds[1].fd = server_socket;
-            fds[1].events = POLLIN;
+            FD_ZERO(&readfds);
+            FD_SET(client_socket, &readfds);
+            FD_SET(server_socket, &readfds);
 
-            int ret = WSAPoll(fds, 2, 500); // 500ms超时，以避免忙等待
-            if (ret == SOCKET_ERROR) {
+            // 设置超时时间
+            tv.tv_sec = 0; // 秒
+            tv.tv_usec = 50; // 微秒
+
+            int poll_ret = select(0, &readfds, NULL, NULL, &tv);
+            if (poll_ret == SOCKET_ERROR) {
                 printf("ERROR WinSocketAPI Poll_mode: %d.\n", WSAGetLastError());
                 closesocket(server_socket);
                 closesocket(client_socket);
                 WSACleanup();
                 exit(1);
             }
-            else if (ret > 0) {
-                if (fds[0].revents & POLLIN) {
+            else if (poll_ret > 0) {
+                if (FD_ISSET(client_socket, &readfds)) {
                     receive_client();
                 }
-                if (fds[1].revents & POLLIN) {
+                if (FD_ISSET(server_socket, &readfds)) {
                     receive_server();
                 }
             }

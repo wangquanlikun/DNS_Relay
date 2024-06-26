@@ -188,7 +188,7 @@ void update_cache(uint8_t ip_addr[4], char domain[]) {
     }
 
     cache_size++;
-    memcpy(new_node->IP, ip_addr, sizeof(ip_addr));
+    memcpy(new_node->IP, ip_addr, sizeof(uint8_t) * 4);
     strcpy(new_node->domain, domain);
 
     //LRU机制，最近访问的放到头部

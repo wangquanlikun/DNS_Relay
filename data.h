@@ -21,15 +21,6 @@ extern int debug_mode;
 #define POLL_MODE 2
 extern int mode;
 
-#ifdef _WIN32
-struct pollfd {
-    SOCKET fd;         // 文件描述符
-    short events;      // 事件掩码
-    short revents;     // 返回的事件
-};
-#define POLLIN 0x0001
-#endif
-
 #define DEFAULT_ADDRESS "202.106.0.20"
 extern char server_ip[16];
 
