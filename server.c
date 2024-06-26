@@ -1,6 +1,7 @@
 #include "header.h"
 
 int debug_mode = NO_DEBUG;
+int mode = DEFAULT_MODE;
 char server_ip[16] = DEFAULT_ADDRESS;
 char config_path[100] = DEFAULT_PATH;
 const int port = 53;
@@ -53,6 +54,13 @@ void set_parameter(int argc, char *argv[]) {
         if(argv[parameter_index][0] == '.' || argv[parameter_index][0] == '/' || (argv[parameter_index][0] >= 'A' && argv[parameter_index][0] <= 'Z')){
             strcpy(config_path, argv[parameter_index]);
         }
+
+        if(strcmp(argv[parameter_index], "-m1") == 0){
+            mode = DEFAULT_MODE;
+        }
+        else if(strcmp(argv[parameter_index], "-m2") == 0){
+            mode = POLL_MODE;
+        }
     }
 
     print_info();
@@ -61,21 +69,21 @@ void set_parameter(int argc, char *argv[]) {
 int bind_port() {
     #ifdef _WIN32
 
-    WORD wVersion = MAKEWORD(2, 2);
+    WORD wVersion = MAKEWORD(2, 2); // 请求2.2版本的Winsock库
     WSADATA wsaData;
     if(WSAStartup(wVersion, &wsaData) != 0) {
         return FAIL;
     }
 
-    client_socket = socket(AF_INET, SOCK_DGRAM, 0);
-    server_socket = socket(AF_INET, SOCK_DGRAM, 0);
+    client_socket = socket(AF_INET, SOCK_DGRAM, 0); // 创建UDP套接字
+    server_socket = socket(AF_INET, SOCK_DGRAM, 0); 
 
-    memset(&client_addr, 0, sizeof(client_addr));
+    memset(&client_addr, 0, sizeof(client_addr)); // 初始化地址结构
     memset(&server_addr, 0, sizeof(server_addr));
 
-    client_addr.sin_family = AF_INET;
-    client_addr.sin_addr.s_addr = INADDR_ANY;
-    client_addr.sin_port = htons(port);
+    client_addr.sin_family = AF_INET; // 设置地址族
+    client_addr.sin_addr.s_addr = INADDR_ANY; // 设置地址
+    client_addr.sin_port = htons(port); // 设置端口
 
     server_addr.sin_family = AF_INET;
     server_addr.sin_addr.s_addr = inet_addr(server_ip);
@@ -175,7 +183,7 @@ int load_config() {
     }
 }
 
-void add_host_info(char domain[], uint8_t IPAddr[]){
+void add_host_info(char domain[], uint8_t IPAddr[]){ // 添加域名和IP地址到字典树
     int domain_len = strlen(domain);
     int index = 0;
 
@@ -214,27 +222,55 @@ void init_data() {
 void run_server() {
     #ifdef _WIN32
 
-    u_long nonBlockingMode = 1;
-    int ser_result = ioctlsocket(server_socket, FIONBIO, &nonBlockingMode);
-    int cli_result = ioctlsocket(client_socket, FIONBIO, &nonBlockingMode);
+    if(mode == DEFAULT_MODE) {
+        u_long nonBlockingMode = 0;
+        int ser_result = ioctlsocket(server_socket, FIONBIO, &nonBlockingMode); // 设置为阻塞模式
+        int cli_result = ioctlsocket(client_socket, FIONBIO, &nonBlockingMode);
 
-    if(ser_result == SOCKET_ERROR || cli_result == SOCKET_ERROR) {
-        printf("Set non-blocking mode failed.\n");
-        closesocket(server_socket);
-        closesocket(client_socket);
-        WSACleanup();
-        exit(1);
+        if(ser_result == SOCKET_ERROR || cli_result == SOCKET_ERROR) {
+            printf("Set default mode failed.\n");
+            closesocket(server_socket);
+            closesocket(client_socket);
+            WSACleanup();
+            exit(1);
+        }
+        // success
+        while (1) {
+            receive_client();
+            receive_server();
+        }
+    }
+    else if(mode == POLL_MODE) {
+        struct pollfd fds[2];
+        
+        while (1) {
+            fds[0].fd = client_socket;
+            fds[0].events = POLLIN;
+            fds[1].fd = server_socket;
+            fds[1].events = POLLIN;
+
+            int ret = WSAPoll(fds, 2, 500); // 500ms超时，以避免忙等待
+            if (ret == SOCKET_ERROR) {
+                printf("ERROR WinSocketAPI Poll_mode: %d.\n", WSAGetLastError());
+                closesocket(server_socket);
+                closesocket(client_socket);
+                WSACleanup();
+                exit(1);
+            }
+            else if (ret > 0) {
+                if (fds[0].revents & POLLIN) {
+                    receive_client();
+                }
+                if (fds[1].revents & POLLIN) {
+                    receive_server();
+                }
+            }
+        }
     }
 
     #else
 
     #endif
-
-    // success
-    while (1) {
-        receive_client();
-        receive_server();
-    }
 }
 
 void debug_print(char output_info[]) {
