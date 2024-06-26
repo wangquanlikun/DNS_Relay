@@ -16,12 +16,13 @@ void receive_client() { //接收客户端DNS，查询，回复或上交远程DNS
 
     msg_size = recvfrom(client_socket, recv_buffer, sizeof(recv_buffer), 0, (struct sockaddr*)&client_addr, &addr_len);
 
-    if (msg_size >= 0) {  //接收到请求响应
+    if (msg_size > 0) {  //接收到请求响应
         get_dns_msg(recv_buffer, &dns_msg);
+        debug_print("---------------------------");
         debug_print("Receive DNS request from client.");
         if(debug_mode == DEBUG_MODE_2){
             for (int i = 0; i < msg_size; i++) {
-                printf("%02x ", recv_buffer[i]);
+                printf("%02x ", (unsigned char)recv_buffer[i]);
             }
             printf("\n");
         }
@@ -35,16 +36,18 @@ void receive_client() { //接收客户端DNS，查询，回复或上交远程DNS
                 if(is_found == FAIL) {
                     //上交远程DNS服务器处理
                     uint16_t newID = set_ID(dns_msg.header.ID, client_addr);
-                    newID = htons(newID);
-                    memcpy(recv_buffer, &newID, sizeof(uint16_t));
-                    if(newID >= MAX_ID_LIST){
+                    if(newID >= (uint16_t)MAX_ID_LIST){
                         debug_print("ID list is full.");
                         return;
                     }
                     else{
+                        newID = htons(newID);
+                        memcpy(recv_buffer, &newID, sizeof(uint16_t));
                         sendto(server_socket, recv_buffer, sizeof(recv_buffer), 0, (struct sockaddr*)&server_addr, addr_len);
                         is_listen = TRUE;
                         debug_print("Send DNS request to server.");
+                        if(debug_mode == DEBUG_MODE_2)
+                            printf("New ID: 0x%x\n", ntohs(newID));
                         return;
                     }
                 }
@@ -86,12 +89,13 @@ void receive_server() {
 
     if(is_listen == TRUE) {
         msg_size = recvfrom(server_socket, buffer, sizeof(buffer), 0, (struct sockaddr*)&server_addr, &addr_len);
-        debug_print("Receive DNS response from server.");
-        get_dns_msg(buffer, &dns_msg);
-        debug_print_DNS(&dns_msg);
     }
 
     if(is_listen == TRUE && msg_size > 0){
+        get_dns_msg(buffer, &dns_msg);
+        debug_print_DNS(&dns_msg);
+        debug_print("---------------------------");
+        debug_print("Receive DNS response from server.");
         uint16_t ID = dns_msg.header.ID;
         uint16_t Old_ID = htons(ID_list[ID].client_ID);
         ID_list[ID].expire_time = 0;
@@ -110,7 +114,7 @@ void receive_server() {
 
 void get_dns_msg(char recv_buffer[], DNS_DATA* dns_msg) {
     //DNS_HEADER
-    dns_msg->header.ID = (recv_buffer[0] << 8) + recv_buffer[1];
+    dns_msg->header.ID = ntohs(*(uint16_t*)recv_buffer);
     dns_msg->header.QR = (recv_buffer[2] >> 7) & 0x01;
     dns_msg->header.OPCODE = (recv_buffer[2] >> 3) & 0x0F;
     dns_msg->header.AA = (recv_buffer[2] >> 2) & 0x01;
@@ -402,6 +406,7 @@ int find_cache(char domain[], uint8_t ip_addr[]) {
             ptr = ptr->next;
         }
     }
+    debug_print("Domain not found in cache.");
     return FAIL;
 }
 
@@ -434,14 +439,14 @@ int find_trie(char domain[], uint8_t ip_addr[]) {
         int num = char_map[domain[i]];
 
         if (list_trie[index].val[num] == 0) {
-            debug_print("Domain not found in host->trie.");
+            debug_print("Domain not found in host trie.");
             return FAIL;
         }
         index = list_trie[index].val[num];
     }
 
     if (list_trie[index].isEnd == TRUE) {
-        debug_print("Find domain in host->trie.");
+        debug_print("Find domain in host trie.");
         if(debug_mode == DEBUG_MODE_2) {
             printf("%s", domain);
             printf("\t%d %d %d %d\n", list_trie[index].IP[0], list_trie[index].IP[1], list_trie[index].IP[2], list_trie[index].IP[3]);
@@ -452,18 +457,18 @@ int find_trie(char domain[], uint8_t ip_addr[]) {
         return SUCCESS;
     }
     else {
-        debug_print("Domain not found in host->trie.");
+        debug_print("Domain not found in host trie.");
         return FAIL;
     }
 }
 
 uint16_t set_ID(uint16_t client_ID, struct sockaddr_in client_address) {
-    uint16_t newID = 0;
-    for (newID = 0; newID < MAX_ID_LIST; newID++) {
+    uint16_t newID = 1;
+    for (newID = 1; newID < MAX_ID_LIST; newID++) {
         if(ID_list[newID].expire_time < time(NULL)) {
             ID_list[newID].client_ID = client_ID;
             ID_list[newID].client_addr = client_address;
-            ID_list[newID].expire_time = time(NULL) + 10;
+            ID_list[newID].expire_time = time(NULL) + 4;
             break;
         }
     }
@@ -475,8 +480,8 @@ void debug_print_DNS(const DNS_DATA* dns_msg) {
         return;
     else if (debug_mode == DEBUG_MODE_1){
         time_t currentTime = time(NULL);
-        printf("time: %s\t", ctime(&currentTime));
-        printf("ID: %d\n", dns_msg->header.ID);
+        printf("ID: 0x%x\t", dns_msg->header.ID);
+        printf("Time: %s", ctime(&currentTime));
         for (int i = 0; i < dns_msg->header.QDCOUNT; i++){
             printf("DOMAIN: %s\n", dns_msg->question[i].QNAME);
         }
@@ -491,8 +496,8 @@ void debug_print_DNS(const DNS_DATA* dns_msg) {
     }
     else if (debug_mode == DEBUG_MODE_2){
         time_t currentTime = time(NULL);
-        printf("time: %s\t", ctime(&currentTime));
-        printf("ID: %d\n", dns_msg->header.ID);
+        printf("ID: 0x%x\t", dns_msg->header.ID);
+        printf("Time: %s", ctime(&currentTime));
         printf("FLAGS: QR %d, OPCODE %d, AA %d, TC %d, RD %d, RA %d, Z %d, RCODE %d\n", dns_msg->header.QR, dns_msg->header.OPCODE, dns_msg->header.AA, dns_msg->header.TC, dns_msg->header.RD, dns_msg->header.RA, dns_msg->header.Z, dns_msg->header.RCODE);
         printf("QDCOUNT: %d, ANCOUNT: %d, NSCOUNT: %d, ARCOUNT: %d\n", dns_msg->header.QDCOUNT, dns_msg->header.ANCOUNT, dns_msg->header.NSCOUNT, dns_msg->header.ARCOUNT);
         for (int i = 0; i < dns_msg->header.QDCOUNT; i++){

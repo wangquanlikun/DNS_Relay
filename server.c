@@ -16,10 +16,16 @@ static void print_info() {
 
     printf("SourceCode at https://github.com/wangquanlikun/DNS_Relay. Fork and Star\n\n");
     printf("DNSRELAY, Version %s, Build: %s %s\n", VERSION, date, time);
-    printf("Usage: dnsrelay [-d | -dd] [<dns-server>] [<db-file>]\n\n");
+    printf("Usage: dnsrelay [-d | -dd] [-m1 | -m2] [<dns-server>] [<db-file>]\n\n");
     
     printf("Name server: %s:%d.\n", server_ip, port);
     printf("Debug level %d.\n", debug_mode);
+    if(mode == DEFAULT_MODE) {
+        printf("Running on non-blocking mode.\n");
+    }
+    else if(mode == POLL_MODE) {
+        printf("Running on poll mode.\n");
+    }
 
     printf("Bind UDP port %d ...", port);
     if(bind_port() == 0) {

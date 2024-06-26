@@ -21,7 +21,7 @@ extern int debug_mode;
 #define POLL_MODE 2
 extern int mode;
 
-#define DEFAULT_ADDRESS "202.106.0.20"
+#define DEFAULT_ADDRESS "10.3.9.4"
 extern char server_ip[16];
 
 #define DEFAULT_PATH "./dnsrelay.txt"
