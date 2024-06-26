@@ -48,6 +48,7 @@ void receive_client() { //接收客户端DNS，查询，回复或上交远程DNS
                         debug_print("Send DNS request to server.");
                         if(debug_mode == DEBUG_MODE_2)
                             printf("New ID: 0x%x\n", ntohs(newID));
+                        debug_print("***************************");
                         return;
                     }
                 }
@@ -56,6 +57,7 @@ void receive_client() { //接收客户端DNS，查询，回复或上交远程DNS
                         set_nodomain_ans(&dns_msg);
                         set_dns_msg(ansTo_buffer, &dns_msg);
                         sendto(client_socket, ansTo_buffer, msg_size, 0, (struct sockaddr*)&client_addr, addr_len);
+                        debug_print("***************************");
                         return;
                     }
                     else
@@ -67,6 +69,7 @@ void receive_client() { //接收客户端DNS，查询，回复或上交远程DNS
                     set_nodomain_ans(&dns_msg);
                     set_dns_msg(ansTo_buffer, &dns_msg);
                     sendto(client_socket, ansTo_buffer, msg_size, 0, (struct sockaddr*)&client_addr, addr_len);
+                    debug_print("***************************");
                     return;
                 }
                 else
@@ -77,7 +80,9 @@ void receive_client() { //接收客户端DNS，查询，回复或上交远程DNS
         if(dns_msg.header.ANCOUNT > 0) {
             set_dns_msg(ansTo_buffer, &dns_msg);
             sendto(client_socket, ansTo_buffer, msg_size, 0, (struct sockaddr*)&client_addr, addr_len);
+            debug_print("Send DNS response to client.");
         }
+        debug_print("***************************");
     }
     return;
 }
@@ -93,15 +98,22 @@ void receive_server() {
 
     if(is_listen == TRUE && msg_size > 0){
         get_dns_msg(buffer, &dns_msg);
-        debug_print_DNS(&dns_msg);
         debug_print("---------------------------");
         debug_print("Receive DNS response from server.");
+        if(debug_mode == DEBUG_MODE_2){
+            for (int i = 0; i < msg_size; i++) {
+                printf("%02x ", (unsigned char)buffer[i]);
+            }
+            printf("\n");
+        }
+        debug_print_DNS(&dns_msg);
         uint16_t ID = dns_msg.header.ID;
         uint16_t Old_ID = htons(ID_list[ID].client_ID);
         ID_list[ID].expire_time = 0;
         memcpy(buffer, &Old_ID, sizeof(uint16_t));
 
         sendto(client_socket, buffer, msg_size, 0, (struct sockaddr*)&(ID_list[ID].client_addr), addr_len);
+        debug_print("Send DNS response to client.");
         is_listen = FALSE;
 
         //更新缓存
@@ -109,6 +121,7 @@ void receive_server() {
             if(dns_msg.answer[i].CLASS == DNS_CLASS_IN && dns_msg.answer[i].TYPE == DNS_TYPE_A && dns_msg.answer[i].RDLENGTH == 4)
                 update_cache(dns_msg.answer[i].RDATA, dns_msg.answer[i].NAME);
         }
+        debug_print("***************************");
     }
 }
 
@@ -164,13 +177,30 @@ void get_dns_msg(char recv_buffer[], DNS_DATA* dns_msg) {
     for (int i = 0; i < dns_msg->header.ANCOUNT; i++) {
         dns_msg->answer[i].NAME[0] = '\0'; // 初始化 NAME 字符串
         int len = 0;
-        while (*ptr_from_answer != 0) {
-            len = *ptr_from_answer;
-            strncat(dns_msg->answer[i].NAME, ptr_from_answer + 1, len);
-            strcat(dns_msg->answer[i].NAME, ".");
-            ptr_from_answer += len + 1;
+        /*
+            若 NAME 字段高两位为 1，则表示该字段是一个指针，指向一个之前出现过的 QNAME 字段，指针指向的位置为指针的值加上 0xc000
+            处理指针时，只需将指针的值减去 0xc000，然后跳转到该位置继续解析即可
+        */
+        if ((*ptr_from_answer & 0xc0) == 0xc0) {
+            uint16_t offset = ntohs(*(uint16_t*)ptr_from_answer) & 0x3fff;
+            char *ptr = recv_buffer + offset;
+            while (*ptr != 0) {
+                len = *ptr;
+                strncat(dns_msg->answer[i].NAME, ptr + 1, len);
+                strcat(dns_msg->answer[i].NAME, ".");
+                ptr += len + 1;
+            }
+            ptr_from_answer += 2;
         }
-        ptr_from_answer++;
+        else {
+            while (*ptr_from_answer != 0) {
+                len = *ptr_from_answer;
+                strncat(dns_msg->answer[i].NAME, ptr_from_answer + 1, len);
+                strcat(dns_msg->answer[i].NAME, ".");
+                ptr_from_answer += len + 1;
+            }
+            ptr_from_answer++;
+        }
         dns_msg->answer[i].TYPE = ntohs(*(uint16_t*)ptr_from_answer);
         dns_msg->answer[i].CLASS = ntohs(*(uint16_t*)(ptr_from_answer + 2));
         dns_msg->answer[i].TTL = ntohl(*(uint32_t*)(ptr_from_answer + 4));
@@ -196,13 +226,26 @@ void get_dns_msg(char recv_buffer[], DNS_DATA* dns_msg) {
     for (int i = 0; i < dns_msg->header.NSCOUNT; i++) {
         dns_msg->authority[i].NAME[0] = '\0'; // 初始化 NAME 字符串
         int len = 0;
-        while (*ptr_from_authority != 0) {
-            len = *ptr_from_authority;
-            strncat(dns_msg->authority[i].NAME, ptr_from_authority + 1, len);
-            strcat(dns_msg->authority[i].NAME, ".");
-            ptr_from_authority += len + 1;
+        if((*ptr_from_authority & 0xc0) == 0xc0) {
+            uint16_t offset = ntohs(*(uint16_t*)ptr_from_authority) & 0x3fff;
+            char *ptr = recv_buffer + offset;
+            while (*ptr != 0) {
+                len = *ptr;
+                strncat(dns_msg->authority[i].NAME, ptr + 1, len);
+                strcat(dns_msg->authority[i].NAME, ".");
+                ptr += len + 1;
+            }
+            ptr_from_authority += 2;
         }
-        ptr_from_authority++;
+        else {
+            while (*ptr_from_authority != 0) {
+                len = *ptr_from_authority;
+                strncat(dns_msg->authority[i].NAME, ptr_from_authority + 1, len);
+                strcat(dns_msg->authority[i].NAME, ".");
+                ptr_from_authority += len + 1;
+            }
+            ptr_from_authority++;
+        }
         dns_msg->authority[i].TYPE = ntohs(*(uint16_t*)ptr_from_authority);
         dns_msg->authority[i].CLASS = ntohs(*(uint16_t*)(ptr_from_authority + 2));
         dns_msg->authority[i].TTL = ntohl(*(uint32_t*)(ptr_from_authority + 4));
@@ -229,13 +272,26 @@ void get_dns_msg(char recv_buffer[], DNS_DATA* dns_msg) {
     for (int i = 0; i < dns_msg->header.ARCOUNT; i++) {
         dns_msg->additional[i].NAME[0] = '\0'; // 初始化 NAME 字符串
         int len = 0;
-        while (*ptr_from_additional != 0) {
-            len = *ptr_from_additional;
-            strncat(dns_msg->additional[i].NAME, ptr_from_additional + 1, len);
-            strcat(dns_msg->additional[i].NAME, ".");
-            ptr_from_additional += len + 1;
+        if((*ptr_from_additional & 0xc0) == 0xc0) {
+            uint16_t offset = ntohs(*(uint16_t*)ptr_from_additional) & 0x3fff;
+            char *ptr = recv_buffer + offset;
+            while (*ptr != 0) {
+                len = *ptr;
+                strncat(dns_msg->additional[i].NAME, ptr + 1, len);
+                strcat(dns_msg->additional[i].NAME, ".");
+                ptr += len + 1;
+            }
+            ptr_from_additional += 2;
         }
-        ptr_from_additional++;
+        else {
+            while (*ptr_from_additional != 0) {
+                len = *ptr_from_additional;
+                strncat(dns_msg->additional[i].NAME, ptr_from_additional + 1, len);
+                strcat(dns_msg->additional[i].NAME, ".");
+                ptr_from_additional += len + 1;
+            }
+            ptr_from_additional++;
+        }
         dns_msg->additional[i].TYPE = ntohs(*(uint16_t*)ptr_from_additional);
         dns_msg->additional[i].CLASS = ntohs(*(uint16_t*)(ptr_from_additional + 2));
         dns_msg->additional[i].TTL = ntohl(*(uint32_t*)(ptr_from_additional + 4));
