@@ -38,17 +38,15 @@ struct DNS_QUESTION {
     char QNAME[300]; // 查询名
     uint16_t QTYPE; // 16位，查询类型
     uint16_t QCLASS; // 16位，查询类
-    struct DNS_QUESTION *next; // 下一个查询
 };
 
 struct DNS_RR {
-    char NAME[300]; // 16位，资源记录名
+    char NAME[300]; // 资源记录名
     uint16_t TYPE; // 16位，资源记录类型
     uint16_t CLASS; // 16位，资源记录类
     uint32_t TTL; // 32位，生存时间
     uint16_t RDLENGTH; // 16位，数据长度
     uint8_t *RDATA; // 变长，资源数据
-    struct DNS_RR *next; // 下一个资源记录
 };
 
 #define DNS_TYPE_A 1 // IPv4地址
@@ -71,7 +69,7 @@ struct DNS_RR {
 
 struct dns_data {
     struct DNS_HEADER header;
-    struct DNS_QUESTION *question;
+    struct DNS_QUESTION *question; // malloc()动态分配
     struct DNS_RR *answer;
     struct DNS_RR *authority;
     struct DNS_RR *additional;

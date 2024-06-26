@@ -13,13 +13,15 @@ void add_host_info(char domain[], uint8_t IPAddr[]); //添加HOST信息
 
 void init_data(); //初始化数据
 void debug_print(char output_info[]); //调试输出
+void debug_print_DNS(const DNS_DATA* dns_msg); //调试输出DNS报文
 
 void run_server(); 
 void receive_client();
 void receive_server();
 
 void get_dns_msg(char recv_buffer[], DNS_DATA* dns_msg); //解析DNS报文
-void set_dns(DNS_DATA* dns_msg, uint8_t ip_addr[]); //设置DNS_ANSWER
+void set_dns_ans(DNS_DATA* dns_msg, uint8_t ip_addr[], char name[]); //设置DNS_ANSWER
+void set_nodomain_ans(DNS_DATA* dns_msg); //设置无域名(0.0.0.0)回答
 void set_dns_msg(char ansTo_buffer[], DNS_DATA* dns_msg); //设置DNS报文
 
 int find_cache(char domain[], uint8_t ip_addr[]); //查找缓存
