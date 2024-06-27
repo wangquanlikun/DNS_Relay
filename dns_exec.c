@@ -160,6 +160,31 @@ void receive_server() {
     return;
 }
 
+void get_domain_name(char* recv_buffer, char* domain_name, char* ptr, int n, char** init_ptr, char can_plus_ptr) {
+    if ((ptr)[0] == 0) {
+        if (can_plus_ptr == 1)
+            (*init_ptr)++;
+        return;
+    }
+    if (((ptr)[0] & 0xc0) == 0xc0) {
+        int offset = (((ptr)[0] & 0x3f) << 8) + (ptr)[1];
+        if (can_plus_ptr == 1)
+            (*init_ptr) += 2;
+        char* temp_ptr1 = recv_buffer + offset;
+        get_domain_name(recv_buffer, domain_name, temp_ptr1, n, init_ptr, 0);
+        return;
+    }
+    int len = (ptr)[0];
+    if (can_plus_ptr == 1)
+        (*init_ptr) += (len + 1);
+    for (int i = 0; i < len; i++) {
+        domain_name[n + i] = (char)(ptr)[i + 1];
+    }
+    domain_name[n + len] = '.';
+    char* temp_ptr2 = ptr + len + 1;
+    get_domain_name(recv_buffer, domain_name, temp_ptr2, n + len + 1, init_ptr, can_plus_ptr);
+}
+
 void get_dns_msg(char recv_buffer[], DNS_DATA* dns_msg) {
     //DNS_HEADER
     dns_msg->header.ID = ntohs(*(uint16_t*)recv_buffer);
@@ -188,15 +213,8 @@ void get_dns_msg(char recv_buffer[], DNS_DATA* dns_msg) {
     char *ptr_from_question = recv_buffer + 12; //跳过DNS_HEADER部分,指向DNS_QUESTION部分
     // 解析 DNS_QUESTION
     for (int i = 0; i < dns_msg->header.QDCOUNT; i++) {
-        dns_msg->question[i].QNAME[0] = '\0'; // 初始化 QNAME 字符串
-        int len = 0;
-        while (*ptr_from_question != 0) {
-            len = *ptr_from_question;
-            strncat(dns_msg->question[i].QNAME, ptr_from_question + 1, len);
-            strcat(dns_msg->question[i].QNAME, ".");
-            ptr_from_question += len + 1;
-        }
-        ptr_from_question++; // 跳过 QNAME 末尾的 0 字节
+        memset(dns_msg->question[i].QNAME, 0, sizeof(dns_msg->question[i].QNAME)); // 初始化 QNAME 字符串
+        get_domain_name(recv_buffer, dns_msg->question[i].QNAME, ptr_from_question, 0, &ptr_from_question, 1);
         dns_msg->question[i].QTYPE = ntohs(*(uint16_t*)ptr_from_question);
         dns_msg->question[i].QCLASS = ntohs(*(uint16_t*)(ptr_from_question + 2));
         ptr_from_question += 4;
@@ -214,32 +232,12 @@ void get_dns_msg(char recv_buffer[], DNS_DATA* dns_msg) {
 
     char *ptr_from_answer = ptr_from_question;
     for (int i = 0; i < dns_msg->header.ANCOUNT; i++) {
-        dns_msg->answer[i].NAME[0] = '\0'; // 初始化 NAME 字符串
-        int len = 0;
         /*
             若 NAME 字段高两位为 1，则表示该字段是一个指针，指向一个之前出现过的 QNAME 字段，指针指向的位置为指针的值加上 0xc000
             处理指针时，只需将指针的值减去 0xc000，然后跳转到该位置继续解析即可
         */
-        if ((*ptr_from_answer & 0xc0) == 0xc0) {
-            uint16_t offset = ntohs(*(uint16_t*)ptr_from_answer) & 0x3fff;
-            char *ptr = recv_buffer + offset;
-            while (*ptr != 0) {
-                len = *ptr;
-                strncat(dns_msg->answer[i].NAME, ptr + 1, len);
-                strcat(dns_msg->answer[i].NAME, ".");
-                ptr += len + 1;
-            }
-            ptr_from_answer += 2;
-        }
-        else {
-            while (*ptr_from_answer != 0) {
-                len = *ptr_from_answer;
-                strncat(dns_msg->answer[i].NAME, ptr_from_answer + 1, len);
-                strcat(dns_msg->answer[i].NAME, ".");
-                ptr_from_answer += len + 1;
-            }
-            ptr_from_answer++;
-        }
+        memset(dns_msg->answer[i].NAME, 0, sizeof(dns_msg->answer[i].NAME)); // 初始化 NAME 字符串
+        get_domain_name(recv_buffer, dns_msg->answer[i].NAME, ptr_from_answer, 0, &ptr_from_answer, 1);
         dns_msg->answer[i].TYPE = ntohs(*(uint16_t*)ptr_from_answer);
         dns_msg->answer[i].CLASS = ntohs(*(uint16_t*)(ptr_from_answer + 2));
         dns_msg->answer[i].TTL = ntohl(*(uint32_t*)(ptr_from_answer + 4));
@@ -268,28 +266,8 @@ void get_dns_msg(char recv_buffer[], DNS_DATA* dns_msg) {
 
     char *ptr_from_authority = ptr_from_answer;
     for (int i = 0; i < dns_msg->header.NSCOUNT; i++) {
-        dns_msg->authority[i].NAME[0] = '\0'; // 初始化 NAME 字符串
-        int len = 0;
-        if((*ptr_from_authority & 0xc0) == 0xc0) {
-            uint16_t offset = ntohs(*(uint16_t*)ptr_from_authority) & 0x3fff;
-            char *ptr = recv_buffer + offset;
-            while (*ptr != 0) {
-                len = *ptr;
-                strncat(dns_msg->authority[i].NAME, ptr + 1, len);
-                strcat(dns_msg->authority[i].NAME, ".");
-                ptr += len + 1;
-            }
-            ptr_from_authority += 2;
-        }
-        else {
-            while (*ptr_from_authority != 0) {
-                len = *ptr_from_authority;
-                strncat(dns_msg->authority[i].NAME, ptr_from_authority + 1, len);
-                strcat(dns_msg->authority[i].NAME, ".");
-                ptr_from_authority += len + 1;
-            }
-            ptr_from_authority++;
-        }
+        memset(dns_msg->authority[i].NAME, 0, sizeof(dns_msg->authority[i].NAME)); // 初始化 NAME 字符串
+        get_domain_name(recv_buffer, dns_msg->authority[i].NAME, ptr_from_authority, 0, &ptr_from_authority, 1);
         dns_msg->authority[i].TYPE = ntohs(*(uint16_t*)ptr_from_authority);
         dns_msg->authority[i].CLASS = ntohs(*(uint16_t*)(ptr_from_authority + 2));
         dns_msg->authority[i].TTL = ntohl(*(uint32_t*)(ptr_from_authority + 4));
@@ -318,28 +296,8 @@ void get_dns_msg(char recv_buffer[], DNS_DATA* dns_msg) {
 
     char *ptr_from_additional = ptr_from_authority;
     for (int i = 0; i < dns_msg->header.ARCOUNT; i++) {
-        dns_msg->additional[i].NAME[0] = '\0'; // 初始化 NAME 字符串
-        int len = 0;
-        if((*ptr_from_additional & 0xc0) == 0xc0) {
-            uint16_t offset = ntohs(*(uint16_t*)ptr_from_additional) & 0x3fff;
-            char *ptr = recv_buffer + offset;
-            while (*ptr != 0) {
-                len = *ptr;
-                strncat(dns_msg->additional[i].NAME, ptr + 1, len);
-                strcat(dns_msg->additional[i].NAME, ".");
-                ptr += len + 1;
-            }
-            ptr_from_additional += 2;
-        }
-        else {
-            while (*ptr_from_additional != 0) {
-                len = *ptr_from_additional;
-                strncat(dns_msg->additional[i].NAME, ptr_from_additional + 1, len);
-                strcat(dns_msg->additional[i].NAME, ".");
-                ptr_from_additional += len + 1;
-            }
-            ptr_from_additional++;
-        }
+        memset(dns_msg->additional[i].NAME, 0, sizeof(dns_msg->additional[i].NAME)); // 初始化 NAME 字符串
+        get_domain_name(recv_buffer, dns_msg->additional[i].NAME, ptr_from_additional, 0, &ptr_from_additional, 1);
         dns_msg->additional[i].TYPE = ntohs(*(uint16_t*)ptr_from_additional);
         dns_msg->additional[i].CLASS = ntohs(*(uint16_t*)(ptr_from_additional + 2));
         dns_msg->additional[i].TTL = ntohl(*(uint32_t*)(ptr_from_additional + 4));
