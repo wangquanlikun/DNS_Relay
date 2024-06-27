@@ -10,7 +10,7 @@ void receive_client() { //接收客户端DNS，查询，回复或上交远程DNS
     char recv_buffer[BUFFER_SIZE];
     char ansTo_buffer[BUFFER_SIZE];
     DNS_DATA dns_msg;
-    uint8_t ip_addr[4] = {0};
+    uint8_t ip_addr[16] = {0};
     int msg_size = -1;
     int ans_size = -1;
     int is_found = FALSE;
@@ -34,9 +34,9 @@ void receive_client() { //接收客户端DNS，查询，回复或上交远程DNS
         debug_print_DNS(&dns_msg);
 
         for (int i = 0; i < dns_msg.header.QDCOUNT; i++){
-            is_found = find_cache(dns_msg.question[i].QNAME, ip_addr);
+            is_found = find_cache(dns_msg.question[i].QNAME, ip_addr, dns_msg.question[i].QTYPE);
             if (is_found == FAIL) {
-                is_found = find_trie(dns_msg.question[i].QNAME, ip_addr);
+                is_found = find_trie(dns_msg.question[i].QNAME, ip_addr, dns_msg.question[i].QTYPE);
 
                 if(is_found == FAIL) {
                     //上交远程DNS服务器处理
@@ -70,7 +70,7 @@ void receive_client() { //接收客户端DNS，查询，回复或上交远程DNS
                         return;
                     }
                     else
-                        set_dns_ans(&dns_msg, ip_addr, dns_msg.question[i].QNAME);
+                        set_dns_ans(&dns_msg, ip_addr, dns_msg.question[i].QNAME, dns_msg.question[i].QTYPE);
                 }
             }
             else{
@@ -84,7 +84,7 @@ void receive_client() { //接收客户端DNS，查询，回复或上交远程DNS
                     return;
                 }
                 else
-                    set_dns_ans(&dns_msg, ip_addr, dns_msg.question[i].QNAME);
+                    set_dns_ans(&dns_msg, ip_addr, dns_msg.question[i].QNAME, dns_msg.question[i].QTYPE);
             }
         }
 
@@ -151,8 +151,8 @@ void receive_server() {
 
         //更新缓存
         for (int i = 0; i < dns_msg.header.ANCOUNT; i++) {
-            if(dns_msg.answer[i].CLASS == DNS_CLASS_IN && dns_msg.answer[i].TYPE == DNS_TYPE_A && dns_msg.answer[i].RDLENGTH == 4)
-                update_cache(dns_msg.answer[i].RDATA, dns_msg.answer[i].NAME);
+            if(dns_msg.answer[i].CLASS == DNS_CLASS_IN && ((dns_msg.answer[i].TYPE == DNS_TYPE_A && dns_msg.answer[i].RDLENGTH == 4) || (dns_msg.answer[i].TYPE == DNS_TYPE_AAAA && dns_msg.answer[i].RDLENGTH == 16)))
+                update_cache(dns_msg.answer[i].RDATA, dns_msg.answer[i].NAME, dns_msg.answer[i].TYPE);
         }
         debug_print("***************************");
         free_dns_struct(&dns_msg);
@@ -360,7 +360,7 @@ void get_dns_msg(char recv_buffer[], DNS_DATA* dns_msg) {
     return;
 }
 
-void set_dns_ans(DNS_DATA* dns_msg, uint8_t ip_addr[], char name[]) {
+void set_dns_ans(DNS_DATA* dns_msg, uint8_t ip_addr[], char name[], uint16_t QTYPE) {
     dns_msg->header.QR = 1;
     dns_msg->header.RCODE = DNS_RCODE_NO_ERROR;
     dns_msg->header.ANCOUNT++;
@@ -370,12 +370,12 @@ void set_dns_ans(DNS_DATA* dns_msg, uint8_t ip_addr[], char name[]) {
         dns_msg->answer = realloc(dns_msg->answer, sizeof(struct DNS_RR) * dns_msg->header.ANCOUNT);
 
     strcpy(dns_msg->answer[dns_msg->header.ANCOUNT - 1].NAME, name);
-    dns_msg->answer[dns_msg->header.ANCOUNT - 1].TYPE = DNS_TYPE_A;
+    dns_msg->answer[dns_msg->header.ANCOUNT - 1].TYPE = QTYPE;
     dns_msg->answer[dns_msg->header.ANCOUNT - 1].CLASS = DNS_CLASS_IN;
     dns_msg->answer[dns_msg->header.ANCOUNT - 1].TTL = 300;
-    dns_msg->answer[dns_msg->header.ANCOUNT - 1].RDLENGTH = 4;
-    dns_msg->answer[dns_msg->header.ANCOUNT - 1].RDATA = malloc(sizeof(uint8_t) * 4);
-    memcpy(dns_msg->answer[dns_msg->header.ANCOUNT - 1].RDATA, ip_addr, sizeof(uint8_t) * 4);
+    dns_msg->answer[dns_msg->header.ANCOUNT - 1].RDLENGTH = QTYPE == DNS_TYPE_AAAA ? 16 : 4;
+    dns_msg->answer[dns_msg->header.ANCOUNT - 1].RDATA = malloc(sizeof(uint8_t) * (QTYPE == DNS_TYPE_AAAA ? 16 : 4));
+    memcpy(dns_msg->answer[dns_msg->header.ANCOUNT - 1].RDATA, ip_addr, sizeof(uint8_t) * (QTYPE == DNS_TYPE_AAAA ? 16 : 4));
     return;
 }
 
@@ -499,17 +499,39 @@ int set_dns_msg(char ansTo_buffer[], DNS_DATA* dns_msg) {
     return total_len;
 }
 
-int find_cache(char domain[], uint8_t ip_addr[]) {
+int find_cache(char domain[], uint8_t ip_addr[], uint16_t QTYPE) {
     struct lru_node* ptr = lru_head;
+
+    if (QTYPE != DNS_TYPE_A && QTYPE != DNS_TYPE_AAAA) {
+        debug_print("Domain not found in cache.");
+        return FAIL;
+    }
+    if (cache_size == 0) {
+        debug_print("Domain not found in cache.");
+        return FAIL;
+    }
 
     while (ptr->next != NULL) {
         if (strcmp(ptr->next->domain, domain) == 0) {
-            debug_print("Find domain in cache.");
             if(debug_mode == DEBUG_MODE_2) {
                 printf("%s", ptr->next->domain);
-                printf("\t%d %d %d %d\n", ptr->next->IP[0], ptr->next->IP[1], ptr->next->IP[2], ptr->next->IP[3]);
+                if (QTYPE == DNS_TYPE_A){
+                    printf("\tIPv4: %d.%d.%d.%d\n", ptr->next->IP[0], ptr->next->IP[1], ptr->next->IP[2], ptr->next->IP[3]);
+                }
+                else if (QTYPE == DNS_TYPE_AAAA){
+                    printf("\tIPv6: %02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x\n", ptr->next->IP[0], ptr->next->IP[1], ptr->next->IP[2], ptr->next->IP[3], ptr->next->IP[4], ptr->next->IP[5], ptr->next->IP[6], ptr->next->IP[7], ptr->next->IP[8], ptr->next->IP[9], ptr->next->IP[10], ptr->next->IP[11], ptr->next->IP[12], ptr->next->IP[13], ptr->next->IP[14], ptr->next->IP[15]);
+                }
             }
-            memcpy(ip_addr, ptr->next->IP, sizeof(ptr->next->IP));
+            if (QTYPE == DNS_TYPE_A && ptr->next->is_IPv6 == FALSE) {
+                memcpy(ip_addr, ptr->next->IP, sizeof(ptr->next->IP));
+            }
+            else if (QTYPE == DNS_TYPE_AAAA && ptr->next->is_IPv6 == TRUE) {
+                memcpy(ip_addr, ptr->next->IP, sizeof(ptr->next->IP));
+            }
+            else {
+                ptr = ptr->next;
+                continue;
+            }
 
             //LRU机制，最近访问的放到头部
             struct lru_node* temp = ptr->next;
@@ -517,6 +539,7 @@ int find_cache(char domain[], uint8_t ip_addr[]) {
             temp->next = lru_head->next;
             lru_head->next = temp;
 
+            debug_print("Find domain in cache.");
             return SUCCESS;
         }
         else {
@@ -527,7 +550,7 @@ int find_cache(char domain[], uint8_t ip_addr[]) {
     return FAIL;
 }
 
-void update_cache(uint8_t ip_addr[4], char domain[]) {
+void update_cache(uint8_t ip_addr[], char domain[], uint16_t QTYPE) {
     struct lru_node* new_node = malloc(sizeof(LRU_NODE));
     
     if(cache_size >= MAX_CACHE_SIZE) {
@@ -540,7 +563,8 @@ void update_cache(uint8_t ip_addr[4], char domain[]) {
     }
 
     cache_size++;
-    memcpy(new_node->IP, ip_addr, sizeof(uint8_t) * 4);
+    new_node->is_IPv6 = (QTYPE == DNS_TYPE_AAAA) ? TRUE : FALSE;
+    memcpy(new_node->IP, ip_addr, sizeof(uint8_t) * (new_node->is_IPv6 ? 16 : 4));
     strcpy(new_node->domain, domain);
 
     //LRU机制，最近访问的放到头部
@@ -548,7 +572,11 @@ void update_cache(uint8_t ip_addr[4], char domain[]) {
     lru_head->next = new_node;
 }
 
-int find_trie(char domain[], uint8_t ip_addr[]) {
+int find_trie(char domain[], uint8_t ip_addr[], uint16_t QTYPE) {
+    if (QTYPE != DNS_TYPE_A) {
+        debug_print("IPv6 not found in host trie.");
+        return FAIL;
+    }
     int domain_len = strlen(domain);
     int index = 0;
 
@@ -569,7 +597,7 @@ int find_trie(char domain[], uint8_t ip_addr[]) {
             printf("\t%d %d %d %d\n", list_trie[index].IP[0], list_trie[index].IP[1], list_trie[index].IP[2], list_trie[index].IP[3]);
         }
 
-        update_cache(list_trie[index].IP, domain);
+        update_cache(list_trie[index].IP, domain, QTYPE);
         memcpy(ip_addr, list_trie[index].IP, sizeof(list_trie[index].IP));
         return SUCCESS;
     }

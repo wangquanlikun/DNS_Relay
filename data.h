@@ -49,7 +49,8 @@ SOCKADDR_IN server_addr;
 extern int addr_len;
 
 typedef struct lru_node {
-	uint8_t IP[4];
+	uint8_t IP[16];
+	int is_IPv6;
 	char domain[300];
 	struct lru_node* next;
 } LRU_NODE; // LRU缓存
