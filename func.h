@@ -23,7 +23,7 @@ void get_dns_msg(char recv_buffer[], DNS_DATA* dns_msg); //解析DNS报文
 void free_dns_struct(DNS_DATA* dns_data); //释放DNS_DATA结构体
 void set_dns_ans(DNS_DATA* dns_msg, uint8_t ip_addr[], char name[]); //设置DNS_ANSWER
 void set_nodomain_ans(DNS_DATA* dns_msg); //设置无域名(0.0.0.0)回答
-void set_dns_msg(char ansTo_buffer[], DNS_DATA* dns_msg); //设置DNS报文
+int set_dns_msg(char ansTo_buffer[], DNS_DATA* dns_msg); //设置DNS报文
 
 int find_cache(char domain[], uint8_t ip_addr[]); //查找缓存
 void update_cache(uint8_t ip_addr[4], char domain[]); //更新缓存

@@ -12,6 +12,7 @@ void receive_client() { //接收客户端DNS，查询，回复或上交远程DNS
     DNS_DATA dns_msg;
     uint8_t ip_addr[4] = {0};
     int msg_size = -1;
+    int ans_size = -1;
     int is_found = FALSE;
 
     msg_size = recvfrom(client_socket, recv_buffer, sizeof(recv_buffer), 0, (struct sockaddr*)&client_addr, &addr_len);
@@ -48,7 +49,7 @@ void receive_client() { //接收客户端DNS，查询，回复或上交远程DNS
                     else{
                         newID = htons(newID);
                         memcpy(recv_buffer, &newID, sizeof(uint16_t));
-                        sendto(server_socket, recv_buffer, sizeof(recv_buffer), 0, (struct sockaddr*)&server_addr, addr_len);
+                        sendto(server_socket, recv_buffer, msg_size, 0, (struct sockaddr*)&server_addr, addr_len);
                         is_listen = TRUE;
                         debug_print("Send DNS request to server.");
                         if(debug_mode == DEBUG_MODE_2)
@@ -61,8 +62,9 @@ void receive_client() { //接收客户端DNS，查询，回复或上交远程DNS
                 else{
                     if(ip_addr[0] == 0 && ip_addr[1] == 0 && ip_addr[2] == 0 && ip_addr[3] == 0) {
                         set_nodomain_ans(&dns_msg);
-                        set_dns_msg(ansTo_buffer, &dns_msg);
-                        sendto(client_socket, ansTo_buffer, msg_size, 0, (struct sockaddr*)&client_addr, addr_len);
+                        ans_size = set_dns_msg(ansTo_buffer, &dns_msg);
+                        sendto(client_socket, ansTo_buffer, ans_size, 0, (struct sockaddr*)&client_addr, addr_len);
+                        debug_print("Send DNS NODOAMIN response to client.");
                         debug_print("***************************");
                         free_dns_struct(&dns_msg);
                         return;
@@ -74,8 +76,9 @@ void receive_client() { //接收客户端DNS，查询，回复或上交远程DNS
             else{
                 if(ip_addr[0] == 0 && ip_addr[1] == 0 && ip_addr[2] == 0 && ip_addr[3] == 0) {
                     set_nodomain_ans(&dns_msg);
-                    set_dns_msg(ansTo_buffer, &dns_msg);
-                    sendto(client_socket, ansTo_buffer, msg_size, 0, (struct sockaddr*)&client_addr, addr_len);
+                    ans_size = set_dns_msg(ansTo_buffer, &dns_msg);
+                    sendto(client_socket, ansTo_buffer, ans_size, 0, (struct sockaddr*)&client_addr, addr_len);
+                    debug_print("Send DNS NODOAMIN response to client.");
                     debug_print("***************************");
                     free_dns_struct(&dns_msg);
                     return;
@@ -86,13 +89,21 @@ void receive_client() { //接收客户端DNS，查询，回复或上交远程DNS
         }
 
         if(dns_msg.header.ANCOUNT > 0) {
-            set_dns_msg(ansTo_buffer, &dns_msg);
-            sendto(client_socket, ansTo_buffer, msg_size, 0, (struct sockaddr*)&client_addr, addr_len);
+            ans_size = set_dns_msg(ansTo_buffer, &dns_msg);
+            sendto(client_socket, ansTo_buffer, ans_size, 0, (struct sockaddr*)&client_addr, addr_len);
             debug_print("Send DNS response to client.");
+
+            if(debug_mode == DEBUG_MODE_2){
+                printf("DNS response Message Size: %d\n", ans_size);
+                for (int i = 0; i < ans_size; i++) {
+                    printf("%02x ", (unsigned char)ansTo_buffer[i]);
+                }
+                printf("\n");
+            }
         }
         debug_print("***************************");
+        free_dns_struct(&dns_msg);
     }
-    free_dns_struct(&dns_msg);
     return;
 }
 
@@ -130,6 +141,11 @@ void receive_server() {
         if(debug_mode == DEBUG_MODE_2){
             printf("Client IP: %s\t", inet_ntoa(ID_list[ID].client_addr.sin_addr));
             printf("Port: %d\n", ntohs(ID_list[ID].client_addr.sin_port));
+            printf("ID: 0x%x\n", ntohs(Old_ID));
+            for (int i = 0; i < msg_size; i++) {
+                printf("%02x ", (unsigned char)buffer[i]);
+            }
+            printf("\n");
         }
         is_listen = FALSE;
 
@@ -139,8 +155,8 @@ void receive_server() {
                 update_cache(dns_msg.answer[i].RDATA, dns_msg.answer[i].NAME);
         }
         debug_print("***************************");
+        free_dns_struct(&dns_msg);
     }
-    free_dns_struct(&dns_msg);
     return;
 }
 
@@ -166,6 +182,8 @@ void get_dns_msg(char recv_buffer[], DNS_DATA* dns_msg) {
         debug_print("Memory allocation failed for DNS questions.");
         return;
     }
+    if(dns_msg->header.QDCOUNT == 0)
+        dns_msg->question = NULL;
 
     char *ptr_from_question = recv_buffer + 12; //跳过DNS_HEADER部分,指向DNS_QUESTION部分
     // 解析 DNS_QUESTION
@@ -191,6 +209,8 @@ void get_dns_msg(char recv_buffer[], DNS_DATA* dns_msg) {
         debug_print("Memory allocation failed for DNS answers.");
         return;
     }
+    if(dns_msg->header.ANCOUNT == 0)
+        dns_msg->answer = NULL;
 
     char *ptr_from_answer = ptr_from_question;
     for (int i = 0; i < dns_msg->header.ANCOUNT; i++) {
@@ -232,6 +252,8 @@ void get_dns_msg(char recv_buffer[], DNS_DATA* dns_msg) {
             return;
         }
         memcpy(dns_msg->answer[i].RDATA, ptr_from_answer + 2, dns_msg->answer[i].RDLENGTH);
+        if(dns_msg->answer[i].RDLENGTH == 0)
+            dns_msg->answer[i].RDATA = NULL;
         ptr_from_answer += 2 + dns_msg->answer[i].RDLENGTH;
     }
 
@@ -241,6 +263,9 @@ void get_dns_msg(char recv_buffer[], DNS_DATA* dns_msg) {
         debug_print("Memory allocation failed for DNS authority.");
         return;
     }
+    if(dns_msg->header.NSCOUNT == 0)
+        dns_msg->authority = NULL;
+
     char *ptr_from_authority = ptr_from_answer;
     for (int i = 0; i < dns_msg->header.NSCOUNT; i++) {
         dns_msg->authority[i].NAME[0] = '\0'; // 初始化 NAME 字符串
@@ -277,6 +302,8 @@ void get_dns_msg(char recv_buffer[], DNS_DATA* dns_msg) {
             return;
         }
         memcpy(dns_msg->authority[i].RDATA, ptr_from_authority + 2, dns_msg->authority[i].RDLENGTH);
+        if(dns_msg->authority[i].RDLENGTH == 0)
+            dns_msg->authority[i].RDATA = NULL;
         ptr_from_authority += 2 + dns_msg->authority[i].RDLENGTH;
     }
 
@@ -286,6 +313,8 @@ void get_dns_msg(char recv_buffer[], DNS_DATA* dns_msg) {
         debug_print("Memory allocation failed for DNS additional.");
         return;
     }
+    if(dns_msg->header.ARCOUNT == 0)
+        dns_msg->additional = NULL;
 
     char *ptr_from_additional = ptr_from_authority;
     for (int i = 0; i < dns_msg->header.ARCOUNT; i++) {
@@ -323,6 +352,8 @@ void get_dns_msg(char recv_buffer[], DNS_DATA* dns_msg) {
             return;
         }
         memcpy(dns_msg->additional[i].RDATA, ptr_from_additional + 2, dns_msg->additional[i].RDLENGTH);
+        if(dns_msg->additional[i].RDLENGTH == 0)
+            dns_msg->additional[i].RDATA = NULL;
         ptr_from_additional += 2 + dns_msg->additional[i].RDLENGTH;
     }
 
@@ -339,16 +370,17 @@ void set_dns_ans(DNS_DATA* dns_msg, uint8_t ip_addr[], char name[]) {
         dns_msg->answer = realloc(dns_msg->answer, sizeof(struct DNS_RR) * dns_msg->header.ANCOUNT);
 
     strcpy(dns_msg->answer[dns_msg->header.ANCOUNT - 1].NAME, name);
-    dns_msg->answer[dns_msg->header.ANCOUNT - 1].TYPE = htons(DNS_TYPE_A);
-    dns_msg->answer[dns_msg->header.ANCOUNT - 1].CLASS = htons(DNS_CLASS_IN);
-    dns_msg->answer[dns_msg->header.ANCOUNT - 1].TTL = htonl(300);
-    dns_msg->answer[dns_msg->header.ANCOUNT - 1].RDLENGTH = htons(4);
+    dns_msg->answer[dns_msg->header.ANCOUNT - 1].TYPE = DNS_TYPE_A;
+    dns_msg->answer[dns_msg->header.ANCOUNT - 1].CLASS = DNS_CLASS_IN;
+    dns_msg->answer[dns_msg->header.ANCOUNT - 1].TTL = 300;
+    dns_msg->answer[dns_msg->header.ANCOUNT - 1].RDLENGTH = 4;
     dns_msg->answer[dns_msg->header.ANCOUNT - 1].RDATA = malloc(sizeof(uint8_t) * 4);
     memcpy(dns_msg->answer[dns_msg->header.ANCOUNT - 1].RDATA, ip_addr, sizeof(uint8_t) * 4);
     return;
 }
 
-void set_dns_msg(char ansTo_buffer[], DNS_DATA* dns_msg) {
+int set_dns_msg(char ansTo_buffer[], DNS_DATA* dns_msg) {
+    int total_len = 0;
     //设置DNS_HEADER
     *(uint16_t*)(ansTo_buffer) = htons(dns_msg->header.ID);
     ansTo_buffer[2] = (dns_msg->header.QR << 7) + (dns_msg->header.OPCODE << 3) + (dns_msg->header.AA << 2) + (dns_msg->header.TC << 1) + dns_msg->header.RD;
@@ -357,6 +389,7 @@ void set_dns_msg(char ansTo_buffer[], DNS_DATA* dns_msg) {
     *(uint16_t*)(ansTo_buffer + 6) = htons(dns_msg->header.ANCOUNT);
     *(uint16_t*)(ansTo_buffer + 8) = htons(dns_msg->header.NSCOUNT);
     *(uint16_t*)(ansTo_buffer + 10) = htons(dns_msg->header.ARCOUNT);
+    total_len += 12;
 
     //设置DNS_QUESTION
     char *ptr_to_question = ansTo_buffer + 12;
@@ -376,6 +409,8 @@ void set_dns_msg(char ansTo_buffer[], DNS_DATA* dns_msg) {
         ptr_to_question += 2;
         *(uint16_t*)ptr_to_question = htons(dns_msg->question[i].QCLASS);
         ptr_to_question += 2;
+
+        total_len += name_len + 1 + 2 + 2;
     }   
 
     //设置DNS_ANSWER
@@ -402,6 +437,8 @@ void set_dns_msg(char ansTo_buffer[], DNS_DATA* dns_msg) {
         ptr_to_answer += 2;
         memcpy(ptr_to_answer, dns_msg->answer[i].RDATA, dns_msg->answer[i].RDLENGTH);
         ptr_to_answer += dns_msg->answer[i].RDLENGTH;
+
+        total_len += name_len + 1 + 2 + 2 + 4 + 2 + dns_msg->answer[i].RDLENGTH;
     }
 
     //设置DNS_AUTHORITY
@@ -428,10 +465,12 @@ void set_dns_msg(char ansTo_buffer[], DNS_DATA* dns_msg) {
         ptr_to_authority += 2;
         memcpy(ptr_to_authority, dns_msg->authority[i].RDATA, dns_msg->authority[i].RDLENGTH);
         ptr_to_authority += dns_msg->authority[i].RDLENGTH;
+
+        total_len += name_len + 1 + 2 + 2 + 4 + 2 + dns_msg->authority[i].RDLENGTH;
     }
 
     //设置DNS_ADDITIONAL
-        char *ptr_to_additional = ptr_to_authority;
+    char *ptr_to_additional = ptr_to_authority;
     for (int i = 0; i < dns_msg->header.ARCOUNT; i++) {
         char *ptr_to_name = dns_msg->additional[i].NAME;
         int name_len = strlen(ptr_to_name);
@@ -454,7 +493,10 @@ void set_dns_msg(char ansTo_buffer[], DNS_DATA* dns_msg) {
         ptr_to_additional += 2;
         memcpy(ptr_to_additional, dns_msg->additional[i].RDATA, dns_msg->additional[i].RDLENGTH);
         ptr_to_additional += dns_msg->additional[i].RDLENGTH;
+
+        total_len += name_len + 1 + 2 + 2 + 4 + 2 + dns_msg->additional[i].RDLENGTH;
     }
+    return total_len;
 }
 
 int find_cache(char domain[], uint8_t ip_addr[]) {
