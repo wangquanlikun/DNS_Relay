@@ -191,6 +191,11 @@ int load_config() {
 
 void add_host_info(char domain[], uint8_t IPAddr[]){ // 添加域名和IP地址到字典树
     int domain_len = strlen(domain);
+    if(domain[domain_len - 1] != '.') {
+        domain[domain_len] = '.';
+        domain[domain_len + 1] = '\0';
+        domain_len++;
+    }
     int index = 0;
 
     for (int i = 0; i < domain_len; i++) {

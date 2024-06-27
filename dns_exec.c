@@ -515,10 +515,10 @@ int find_cache(char domain[], uint8_t ip_addr[], uint16_t QTYPE) {
         if (strcmp(ptr->next->domain, domain) == 0) {
             if(debug_mode == DEBUG_MODE_2) {
                 printf("%s", ptr->next->domain);
-                if (QTYPE == DNS_TYPE_A){
+                if (ptr->next->is_IPv6 == FALSE){
                     printf("\tIPv4: %d.%d.%d.%d\n", ptr->next->IP[0], ptr->next->IP[1], ptr->next->IP[2], ptr->next->IP[3]);
                 }
-                else if (QTYPE == DNS_TYPE_AAAA){
+                else if (ptr->next->is_IPv6 == TRUE){
                     printf("\tIPv6: %02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x\n", ptr->next->IP[0], ptr->next->IP[1], ptr->next->IP[2], ptr->next->IP[3], ptr->next->IP[4], ptr->next->IP[5], ptr->next->IP[6], ptr->next->IP[7], ptr->next->IP[8], ptr->next->IP[9], ptr->next->IP[10], ptr->next->IP[11], ptr->next->IP[12], ptr->next->IP[13], ptr->next->IP[14], ptr->next->IP[15]);
                 }
             }
@@ -526,6 +526,9 @@ int find_cache(char domain[], uint8_t ip_addr[], uint16_t QTYPE) {
                 memcpy(ip_addr, ptr->next->IP, sizeof(ptr->next->IP));
             }
             else if (QTYPE == DNS_TYPE_AAAA && ptr->next->is_IPv6 == TRUE) {
+                memcpy(ip_addr, ptr->next->IP, sizeof(ptr->next->IP));
+            }
+            else if (ptr->next->is_IPv6 == FALSE && ptr->next->IP[0] == 0 && ptr->next->IP[1] == 0 && ptr->next->IP[2] == 0 && ptr->next->IP[3] == 0) {
                 memcpy(ip_addr, ptr->next->IP, sizeof(ptr->next->IP));
             }
             else {
@@ -573,8 +576,8 @@ void update_cache(uint8_t ip_addr[], char domain[], uint16_t QTYPE) {
 }
 
 int find_trie(char domain[], uint8_t ip_addr[], uint16_t QTYPE) {
-    if (QTYPE != DNS_TYPE_A) {
-        debug_print("IPv6 not found in host trie.");
+    if(QTYPE != DNS_TYPE_A && QTYPE != DNS_TYPE_AAAA) {
+        debug_print("Only IP Address is supported in host trie.");
         return FAIL;
     }
     int domain_len = strlen(domain);
@@ -595,6 +598,10 @@ int find_trie(char domain[], uint8_t ip_addr[], uint16_t QTYPE) {
         if(debug_mode == DEBUG_MODE_2) {
             printf("%s", domain);
             printf("\t%d %d %d %d\n", list_trie[index].IP[0], list_trie[index].IP[1], list_trie[index].IP[2], list_trie[index].IP[3]);
+        }
+        if (QTYPE == DNS_TYPE_AAAA && !(list_trie[index].IP[0] == 0 && list_trie[index].IP[1] == 0 && list_trie[index].IP[2] == 0 && list_trie[index].IP[3] == 0)) {
+            debug_print("IPv6 not support in host trie.");
+            return FAIL;
         }
 
         update_cache(list_trie[index].IP, domain, QTYPE);
