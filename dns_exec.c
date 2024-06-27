@@ -21,6 +21,10 @@ void receive_client() { //接收客户端DNS，查询，回复或上交远程DNS
         debug_print("---------------------------");
         debug_print("Receive DNS request from client.");
         if(debug_mode == DEBUG_MODE_2){
+            printf("Client IP: %s\t", inet_ntoa(client_addr.sin_addr));
+            printf("Port: %d\n", ntohs(client_addr.sin_port));
+        }
+        if(debug_mode == DEBUG_MODE_2){
             for (int i = 0; i < msg_size; i++) {
                 printf("%02x ", (unsigned char)recv_buffer[i]);
             }
@@ -38,6 +42,7 @@ void receive_client() { //接收客户端DNS，查询，回复或上交远程DNS
                     uint16_t newID = set_ID(dns_msg.header.ID, client_addr);
                     if(newID >= (uint16_t)MAX_ID_LIST){
                         debug_print("ID list is full.");
+                        free_dns_struct(&dns_msg);
                         return;
                     }
                     else{
@@ -49,6 +54,7 @@ void receive_client() { //接收客户端DNS，查询，回复或上交远程DNS
                         if(debug_mode == DEBUG_MODE_2)
                             printf("New ID: 0x%x\n", ntohs(newID));
                         debug_print("***************************");
+                        free_dns_struct(&dns_msg);
                         return;
                     }
                 }
@@ -58,6 +64,7 @@ void receive_client() { //接收客户端DNS，查询，回复或上交远程DNS
                         set_dns_msg(ansTo_buffer, &dns_msg);
                         sendto(client_socket, ansTo_buffer, msg_size, 0, (struct sockaddr*)&client_addr, addr_len);
                         debug_print("***************************");
+                        free_dns_struct(&dns_msg);
                         return;
                     }
                     else
@@ -70,6 +77,7 @@ void receive_client() { //接收客户端DNS，查询，回复或上交远程DNS
                     set_dns_msg(ansTo_buffer, &dns_msg);
                     sendto(client_socket, ansTo_buffer, msg_size, 0, (struct sockaddr*)&client_addr, addr_len);
                     debug_print("***************************");
+                    free_dns_struct(&dns_msg);
                     return;
                 }
                 else
@@ -84,6 +92,7 @@ void receive_client() { //接收客户端DNS，查询，回复或上交远程DNS
         }
         debug_print("***************************");
     }
+    free_dns_struct(&dns_msg);
     return;
 }
 
@@ -101,6 +110,10 @@ void receive_server() {
         debug_print("---------------------------");
         debug_print("Receive DNS response from server.");
         if(debug_mode == DEBUG_MODE_2){
+            printf("Server IP: %s\t", inet_ntoa(server_addr.sin_addr));
+            printf("Port: %d\n", ntohs(server_addr.sin_port));
+        }
+        if(debug_mode == DEBUG_MODE_2){
             for (int i = 0; i < msg_size; i++) {
                 printf("%02x ", (unsigned char)buffer[i]);
             }
@@ -114,6 +127,10 @@ void receive_server() {
 
         sendto(client_socket, buffer, msg_size, 0, (struct sockaddr*)&(ID_list[ID].client_addr), addr_len);
         debug_print("Send DNS response to client.");
+        if(debug_mode == DEBUG_MODE_2){
+            printf("Client IP: %s\t", inet_ntoa(ID_list[ID].client_addr.sin_addr));
+            printf("Port: %d\n", ntohs(ID_list[ID].client_addr.sin_port));
+        }
         is_listen = FALSE;
 
         //更新缓存
@@ -123,6 +140,8 @@ void receive_server() {
         }
         debug_print("***************************");
     }
+    free_dns_struct(&dns_msg);
+    return;
 }
 
 void get_dns_msg(char recv_buffer[], DNS_DATA* dns_msg) {

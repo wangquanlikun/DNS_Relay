@@ -306,3 +306,28 @@ void debug_print(char output_info[]) {
         return;
     }
 }
+
+void free_dns_struct(DNS_DATA* dns_data){
+    if(dns_data->question != NULL){
+        free(dns_data->question);
+    }
+    if(dns_data->answer != NULL){
+        if(dns_data->answer->RDATA != NULL){
+            free(dns_data->answer->RDATA);
+        }
+        free(dns_data->answer);
+    }
+    if(dns_data->authority != NULL){
+        if(dns_data->authority->RDATA != NULL){
+            free(dns_data->authority->RDATA);
+        }
+        free(dns_data->authority);
+    }
+    if(dns_data->additional != NULL){
+        if(dns_data->additional->RDATA != NULL){
+            free(dns_data->additional->RDATA);
+        }
+        free(dns_data->additional);
+    }
+    return;
+}
