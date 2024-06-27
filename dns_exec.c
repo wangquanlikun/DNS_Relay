@@ -483,8 +483,15 @@ int find_cache(char domain[], uint8_t ip_addr[], uint16_t QTYPE) {
             if (QTYPE == DNS_TYPE_A && ptr->next->is_IPv6 == FALSE) {
                 memcpy(ip_addr, ptr->next->IP, sizeof(ptr->next->IP));
             }
-            else if (QTYPE == DNS_TYPE_AAAA && ptr->next->is_IPv6 == TRUE) {
-                memcpy(ip_addr, ptr->next->IP, sizeof(ptr->next->IP));
+            else if (QTYPE == DNS_TYPE_AAAA) {
+                if (ptr->next->is_IPv6 == TRUE)
+                    memcpy(ip_addr, ptr->next->IP, sizeof(ptr->next->IP));
+                else if (ptr->next->is_IPv6 == FALSE) {
+                    ip_addr[0] = 0;
+                    ip_addr[1] = 0;
+                    ip_addr[2] = 0;
+                    ip_addr[3] = 0;
+                }
             }
             else if (ptr->next->is_IPv6 == FALSE && ptr->next->IP[0] == 0 && ptr->next->IP[1] == 0 && ptr->next->IP[2] == 0 && ptr->next->IP[3] == 0) {
                 memcpy(ip_addr, ptr->next->IP, sizeof(ptr->next->IP));
@@ -557,13 +564,17 @@ int find_trie(char domain[], uint8_t ip_addr[], uint16_t QTYPE) {
             printf("%s", domain);
             printf("\t%d %d %d %d\n", list_trie[index].IP[0], list_trie[index].IP[1], list_trie[index].IP[2], list_trie[index].IP[3]);
         }
-        if (QTYPE == DNS_TYPE_AAAA && !(list_trie[index].IP[0] == 0 && list_trie[index].IP[1] == 0 && list_trie[index].IP[2] == 0 && list_trie[index].IP[3] == 0)) {
-            debug_print("IPv6 not support in host trie.");
-            return FAIL;
-        }
 
+        if (QTYPE == DNS_TYPE_AAAA) {
+            ip_addr[0] = 0;
+            ip_addr[1] = 0;
+            ip_addr[2] = 0;
+            ip_addr[3] = 0;
+        }
+        else if(QTYPE == DNS_TYPE_A) {
+            memcpy(ip_addr, list_trie[index].IP, sizeof(list_trie[index].IP));
+        }
         update_cache(list_trie[index].IP, domain, QTYPE);
-        memcpy(ip_addr, list_trie[index].IP, sizeof(list_trie[index].IP));
         return SUCCESS;
     }
     else {
