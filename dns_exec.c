@@ -459,6 +459,7 @@ int set_dns_msg(char ansTo_buffer[], DNS_DATA* dns_msg) {
 
 int find_cache(char domain[], uint8_t ip_addr[], uint16_t QTYPE) {
     struct lru_node* ptr = lru_head;
+    int AAAAV4 = FALSE;
 
     if (QTYPE != DNS_TYPE_A && QTYPE != DNS_TYPE_AAAA) {
         debug_print("Domain not found in cache.");
@@ -487,10 +488,9 @@ int find_cache(char domain[], uint8_t ip_addr[], uint16_t QTYPE) {
                 if (ptr->next->is_IPv6 == TRUE)
                     memcpy(ip_addr, ptr->next->IP, sizeof(ptr->next->IP));
                 else if (ptr->next->is_IPv6 == FALSE) {
-                    ip_addr[0] = 0;
-                    ip_addr[1] = 0;
-                    ip_addr[2] = 0;
-                    ip_addr[3] = 0;
+                    AAAAV4 = TRUE;
+                    ptr = ptr->next;
+                    continue;
                 }
             }
             else if (ptr->next->is_IPv6 == FALSE && ptr->next->IP[0] == 0 && ptr->next->IP[1] == 0 && ptr->next->IP[2] == 0 && ptr->next->IP[3] == 0) {
@@ -513,6 +513,15 @@ int find_cache(char domain[], uint8_t ip_addr[], uint16_t QTYPE) {
         else {
             ptr = ptr->next;
         }
+    }
+
+    if(AAAAV4 == TRUE) {
+        debug_print("Find IPv4 domain in cache but asking for IPv6.");
+        ip_addr[0] = 0;
+        ip_addr[1] = 0;
+        ip_addr[2] = 0;
+        ip_addr[3] = 0;
+        return SUCCESS;
     }
     debug_print("Domain not found in cache.");
     return FAIL;
