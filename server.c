@@ -42,15 +42,15 @@ unsigned __stdcall workerThreadProc(void* param) {
         if (taskQueueSize > 0) {
             currentIndex = nextTaskIndex;
             nextTaskIndex = (nextTaskIndex + 1) % MAX_THREADS;
-            --taskQueueSize;
+            //--taskQueueSize;
         }
-        LeaveCriticalSection(&cs);
-
+        
         if (currentIndex != -1) {
             printf("Thread %d is processing task\n", GetCurrentThreadId());
             ProcessDNSThread(&taskQueue[currentIndex]);
-            memset(&taskQueue[currentIndex], 0, sizeof(ThreadParams));  // 重置结构体
+            taskQueueSize--;
         }
+        LeaveCriticalSection(&cs);
     }
     return 0;
 }

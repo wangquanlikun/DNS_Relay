@@ -839,6 +839,7 @@ void submitToThreadPool(ThreadParams pParams) {
     while (taskQueueSize >= MAX_THREADS) { // 如果队列满，等待
         SleepConditionVariableCS(&conditionVariable, &cs, INFINITE); // 等待条件变量被唤醒
     }
+    memset(&taskQueue[nextTaskIndex], 0, sizeof(ThreadParams)); // 清空任务队列
     taskQueue[nextTaskIndex] = pParams;
     ++taskQueueSize;
 
