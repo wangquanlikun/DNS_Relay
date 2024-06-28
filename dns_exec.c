@@ -3,7 +3,7 @@
 
 int cache_size = 0;
 int addr_len = sizeof(struct sockaddr_in);
-int is_listen = FALSE;
+int listen_num = 0;
 extern int char_map[256];
 
 void receive_client() { //接收客户端DNS，查询，回复或上交远程DNS服务器处理
@@ -50,7 +50,7 @@ void receive_client() { //接收客户端DNS，查询，回复或上交远程DNS
                         newID = htons(newID);
                         memcpy(recv_buffer, &newID, sizeof(uint16_t));
                         sendto(server_socket, recv_buffer, msg_size, 0, (struct sockaddr*)&server_addr, addr_len);
-                        is_listen = TRUE;
+                        listen_num++;
                         debug_print("Send DNS request to server.");
                         if(debug_mode == DEBUG_MODE_2)
                             printf("New ID: 0x%x\n", ntohs(newID));
@@ -112,11 +112,11 @@ void receive_server() {
     DNS_DATA dns_msg;
     int msg_size = -1;
 
-    if(is_listen == TRUE) {
+    if(listen_num > 0) {
         msg_size = recvfrom(server_socket, buffer, sizeof(buffer), 0, (struct sockaddr*)&server_addr, &addr_len);
     }
 
-    if(is_listen == TRUE && msg_size > 0){
+    if(listen_num > 0 && msg_size > 0){
         get_dns_msg(buffer, &dns_msg);
         debug_print("---------------------------");
         debug_print("Receive DNS response from server.");
@@ -147,13 +147,15 @@ void receive_server() {
             }
             printf("\n");
         }
-        is_listen = FALSE;
+        listen_num--;
 
         //更新缓存
         for (int i = 0; i < dns_msg.header.ANCOUNT; i++) {
             if(dns_msg.answer[i].CLASS == DNS_CLASS_IN && ((dns_msg.answer[i].TYPE == DNS_TYPE_A && dns_msg.answer[i].RDLENGTH == 4) || (dns_msg.answer[i].TYPE == DNS_TYPE_AAAA && dns_msg.answer[i].RDLENGTH == 16))){
                 update_cache(dns_msg.answer[i].RDATA, dns_msg.answer[i].NAME, dns_msg.answer[i].TYPE);
                 write_back_trie(dns_msg.answer[i].NAME, dns_msg.answer[i].RDATA, dns_msg.answer[i].TYPE);
+                update_cache(dns_msg.answer[i].RDATA, dns_msg.question->QNAME, dns_msg.answer[i].TYPE);
+                write_back_trie(dns_msg.question->QNAME, dns_msg.answer[i].RDATA, dns_msg.answer[i].TYPE);
             }
         }
         debug_print("***************************");
@@ -599,6 +601,8 @@ uint16_t set_ID(uint16_t client_ID, struct sockaddr_in client_address) {
     uint16_t newID = 1;
     for (newID = 1; newID < MAX_ID_LIST; newID++) {
         if(ID_list[newID].expire_time < time(NULL)) {
+            if(ID_list[newID].expire_time != 0)
+                listen_num--; // 监听的某一回复超时
             ID_list[newID].client_ID = client_ID;
             ID_list[newID].client_addr = client_address;
             ID_list[newID].expire_time = time(NULL) + EXPIRE_TIME;

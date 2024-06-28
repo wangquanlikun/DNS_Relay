@@ -65,7 +65,7 @@ typedef struct {
 	struct sockaddr_in client_addr;
 } ID_conversion;
 #define MAX_ID_LIST 255
-#define EXPIRE_TIME 8
+#define EXPIRE_TIME 30
 ID_conversion ID_list[MAX_ID_LIST]; // ID转换表
 
 #endif
