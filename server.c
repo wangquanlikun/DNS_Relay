@@ -6,7 +6,7 @@ char server_ip[16] = DEFAULT_ADDRESS;
 char config_path[100] = DEFAULT_PATH;
 const int port = 53;
 
-extern trie list_trie[65535];
+extern trie list_trie[TRIE_LIST_SIZE];
 int list_size = 0;
 int char_map[256];
 
@@ -184,12 +184,18 @@ int load_config() {
         }
 
         printf("Load %d names.\n", num);
+        if(debug_mode == DEBUG_MODE_2)
+            printf("List size: %d\n", list_size);
         fclose(config_file_ptr);
         return SUCCESS;
     }
 }
 
 void add_host_info(char domain[], uint8_t IPAddr[]){ // 添加域名和IP地址到字典树
+    if(list_size >= TRIE_LIST_SIZE - 1024) {
+        debug_print("List size is almost full.");
+        return;
+    }
     int domain_len = strlen(domain);
     if(domain[domain_len - 1] != '.') {
         domain[domain_len] = '.';
@@ -347,4 +353,40 @@ void free_dns_struct(DNS_DATA* dns_data){
         }
     }
     return;
+}
+
+void write_back_trie(char domain[], uint8_t ip_addr[], uint16_t QTYPE) {
+    if(QTYPE == DNS_TYPE_AAAA){
+        return;
+    }
+    else if(QTYPE == DNS_TYPE_A){
+        debug_print("Ready to write back to trie.");
+        if(debug_mode == DEBUG_MODE_2) {
+            printf("Now List size: %d\n", list_size);
+        }
+
+        int pre_tire_list_size = list_size;
+        add_host_info(domain, ip_addr);
+
+        int now_tire_list_size = list_size;
+        if(pre_tire_list_size != now_tire_list_size)
+            write_back_file(domain, ip_addr, QTYPE);
+        else
+            debug_print("Already in the trie.");
+        return;
+    }
+}
+
+void write_back_file(char domain[], uint8_t ip_addr[], uint16_t QTYPE) {
+    FILE* config_file_ptr = fopen(config_path, "a");
+    if (!config_file_ptr || QTYPE == DNS_TYPE_AAAA) {
+        return;
+    }
+    else {
+        fseek(config_file_ptr, 0, SEEK_END); // 移动到文件末尾
+        fprintf(config_file_ptr, "%hhu.%hhu.%hhu.%hhu %s\n", ip_addr[0], ip_addr[1], ip_addr[2], ip_addr[3], domain);
+        debug_print("Write back to file.");
+        fclose(config_file_ptr);
+        return;
+    }
 }

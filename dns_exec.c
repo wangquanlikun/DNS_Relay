@@ -151,8 +151,10 @@ void receive_server() {
 
         //更新缓存
         for (int i = 0; i < dns_msg.header.ANCOUNT; i++) {
-            if(dns_msg.answer[i].CLASS == DNS_CLASS_IN && ((dns_msg.answer[i].TYPE == DNS_TYPE_A && dns_msg.answer[i].RDLENGTH == 4) || (dns_msg.answer[i].TYPE == DNS_TYPE_AAAA && dns_msg.answer[i].RDLENGTH == 16)))
+            if(dns_msg.answer[i].CLASS == DNS_CLASS_IN && ((dns_msg.answer[i].TYPE == DNS_TYPE_A && dns_msg.answer[i].RDLENGTH == 4) || (dns_msg.answer[i].TYPE == DNS_TYPE_AAAA && dns_msg.answer[i].RDLENGTH == 16))){
                 update_cache(dns_msg.answer[i].RDATA, dns_msg.answer[i].NAME, dns_msg.answer[i].TYPE);
+                write_back_trie(dns_msg.answer[i].NAME, dns_msg.answer[i].RDATA, dns_msg.answer[i].TYPE);
+            }
         }
         debug_print("***************************");
         free_dns_struct(&dns_msg);
@@ -599,7 +601,7 @@ uint16_t set_ID(uint16_t client_ID, struct sockaddr_in client_address) {
         if(ID_list[newID].expire_time < time(NULL)) {
             ID_list[newID].client_ID = client_ID;
             ID_list[newID].client_addr = client_address;
-            ID_list[newID].expire_time = time(NULL) + 4;
+            ID_list[newID].expire_time = time(NULL) + EXPIRE_TIME;
             break;
         }
     }

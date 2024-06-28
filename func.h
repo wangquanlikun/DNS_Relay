@@ -28,6 +28,8 @@ int set_dns_msg(char ansTo_buffer[], DNS_DATA* dns_msg); //设置DNS报文
 int find_cache(char domain[], uint8_t ip_addr[], uint16_t QTYPE); //查找缓存
 void update_cache(uint8_t ip_addr[], char domain[], uint16_t QTYPE); //更新缓存
 int find_trie(char domain[], uint8_t ip_addr[], uint16_t QTYPE); //查找字典树
+void write_back_trie(char domain[], uint8_t ip_addr[], uint16_t QTYPE); //写回字典树
+void write_back_file(char domain[], uint8_t ip_addr[], uint16_t QTYPE); //写回文件
 
 uint16_t set_ID(uint16_t client_ID, struct sockaddr_in client_address); //消息ID转换
 #endif

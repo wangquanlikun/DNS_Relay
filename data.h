@@ -10,7 +10,7 @@
 #define SUCCESS 1
 #define FAIL 0
 
-#define VERSION "0.1.0"
+#define VERSION "1.0.1"
 
 #define NO_DEBUG 0
 #define DEBUG_MODE_1 1
@@ -37,7 +37,8 @@ typedef struct trie_node {
 	uint8_t IP[4];
 	uint8_t isEnd;
 } trie;
-trie list_trie[65535]; //字典树
+#define TRIE_LIST_SIZE 1048576 // 2^20
+trie list_trie[TRIE_LIST_SIZE]; //字典树
 extern int list_size;
 extern int map[256]; //字符映射表
 
@@ -64,6 +65,7 @@ typedef struct {
 	struct sockaddr_in client_addr;
 } ID_conversion;
 #define MAX_ID_LIST 255
+#define EXPIRE_TIME 8
 ID_conversion ID_list[MAX_ID_LIST]; // ID转换表
 
 #endif
