@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <winsock2.h>
 #include "dns_data.h"
+#include "data.h"
 
 void set_parameter(int argc, char *argv[]); //设置程序命令参数
 
@@ -19,6 +20,8 @@ void debug_print_DNS(const DNS_DATA* dns_msg); //调试输出DNS报文
 void run_server(); 
 void receive_client();
 void receive_server();
+void Thread_receive_client();
+void Thread_receive_server();
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 
 void get_dns_msg(char recv_buffer[], DNS_DATA* dns_msg); //解析DNS报文
@@ -34,4 +37,11 @@ void write_back_trie(char domain[], uint8_t ip_addr[], uint16_t QTYPE); //写回
 void write_back_file(char domain[], uint8_t ip_addr[], uint16_t QTYPE); //写回文件
 
 uint16_t set_ID(uint16_t client_ID, struct sockaddr_in client_address); //消息ID转换
+
+void initThreadPool();
+unsigned __stdcall workerThreadProc(void* param);
+void submitToThreadPool(ThreadParams pParams);
+DWORD WINAPI ProcessDNSThread(LPVOID lpParam);
+void ProcessServer(ThreadParams* pParams);
+void ProcessClient(ThreadParams* pParams);
 #endif

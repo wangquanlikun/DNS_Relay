@@ -601,8 +601,10 @@ uint16_t set_ID(uint16_t client_ID, struct sockaddr_in client_address) {
     uint16_t newID = 1;
     for (newID = 1; newID < MAX_ID_LIST; newID++) {
         if(ID_list[newID].expire_time < time(NULL)) {
-            if(ID_list[newID].expire_time != 0)
+            if(ID_list[newID].expire_time != 0) {
                 listen_num--; // 监听的某一回复超时
+                ID_list[newID].expire_time = 0;
+            }
             ID_list[newID].client_ID = client_ID;
             ID_list[newID].client_addr = client_address;
             ID_list[newID].expire_time = time(NULL) + EXPIRE_TIME;
@@ -655,4 +657,224 @@ void debug_print_DNS(const DNS_DATA* dns_msg) {
 void set_nodomain_ans(DNS_DATA* dns_msg){
     dns_msg->header.QR = 1;
     dns_msg->header.RCODE = DNS_RCODE_NAME_ERROR;
+}
+
+extern HANDLE threadPool[MAX_THREADS];
+extern CRITICAL_SECTION cs;
+extern HANDLE taskQueueMutex;
+extern HANDLE taskQueueSemaphore;
+extern ThreadParams taskQueue[MAX_THREADS]; // 假设任务队列大小与线程池大小相同
+extern int nextTaskIndex;
+extern int taskQueueSize;
+extern CONDITION_VARIABLE conditionVariable;
+
+DWORD WINAPI ProcessDNSThread(LPVOID lpParam) {
+    if (!lpParam) {
+        debug_print("Error: ThreadParams pointer is null.");
+        exit(1);
+        return ERROR_INVALID_PARAMETER;
+    }
+    ThreadParams* pParams = (ThreadParams*)lpParam;
+    if (pParams->client_or_server == 'c') {
+        ProcessClient(pParams);
+    } else {
+        ProcessServer(pParams);
+    }
+    return 0; // 线程退出代码
+}
+
+void ProcessClient(ThreadParams* pParams){
+    char ansTo_buffer[BUFFER_SIZE];
+    DNS_DATA dns_msg;
+    uint8_t ip_addr[16] = {0};
+    int msg_size = -1;
+    int ans_size = -1;
+    int is_found = FALSE;
+    
+    if (!pParams) {
+        debug_print("Error: ThreadParams pointer is null.");
+        exit(1);
+        return;
+    }
+    msg_size = pParams->msg_size;
+    get_dns_msg(pParams->recv_buffer, &dns_msg);
+        debug_print("---------------------------");
+        debug_print("Receive DNS request from client.");
+        if(debug_mode == DEBUG_MODE_2){
+            printf("Client IP: %s\t", inet_ntoa((pParams->client_addr).sin_addr));
+            printf("Port: %d\n", ntohs((pParams->client_addr).sin_port));
+        }
+        if(debug_mode == DEBUG_MODE_2){
+            for (int i = 0; i < msg_size; i++) {
+                printf("%02x ", (unsigned char)pParams->recv_buffer[i]);
+            }
+            printf("\n");
+        }
+        debug_print_DNS(&dns_msg);
+
+        for (int i = 0; i < dns_msg.header.QDCOUNT; i++){
+            is_found = find_cache(dns_msg.question[i].QNAME, ip_addr, dns_msg.question[i].QTYPE);
+            if (is_found == FAIL) {
+                is_found = find_trie(dns_msg.question[i].QNAME, ip_addr, dns_msg.question[i].QTYPE);
+
+                if(is_found == FAIL) {
+                    //上交远程DNS服务器处理
+                    uint16_t newID = set_ID(dns_msg.header.ID, (pParams->client_addr));
+                    if(newID >= (uint16_t)MAX_ID_LIST){
+                        debug_print("ID list is full.");
+                        free_dns_struct(&dns_msg);
+                        return;
+                    }
+                    else{
+                        newID = htons(newID);
+                        memcpy(pParams->recv_buffer, &newID, sizeof(uint16_t));
+                        sendto(server_socket, pParams->recv_buffer, msg_size, 0, (struct sockaddr*)&server_addr, addr_len);
+                        listen_num++;
+                        debug_print("Send DNS request to server.");
+                        if(debug_mode == DEBUG_MODE_2)
+                            printf("New ID: 0x%x\n", ntohs(newID));
+                        debug_print("***************************");
+                        free_dns_struct(&dns_msg);
+                        return;
+                    }
+                }
+                else{
+                    if(ip_addr[0] == 0 && ip_addr[1] == 0 && ip_addr[2] == 0 && ip_addr[3] == 0) {
+                        set_nodomain_ans(&dns_msg);
+                        ans_size = set_dns_msg(ansTo_buffer, &dns_msg);
+                        sendto(client_socket, ansTo_buffer, ans_size, 0, (struct sockaddr*)&(pParams->client_addr), addr_len);
+                        debug_print("Send DNS NODOAMIN response to client.");
+                        debug_print("***************************");
+                        free_dns_struct(&dns_msg);
+                        return;
+                    }
+                    else
+                        set_dns_ans(&dns_msg, ip_addr, dns_msg.question[i].QNAME, dns_msg.question[i].QTYPE);
+                }
+            }
+            else{
+                if(ip_addr[0] == 0 && ip_addr[1] == 0 && ip_addr[2] == 0 && ip_addr[3] == 0) {
+                    set_nodomain_ans(&dns_msg);
+                    ans_size = set_dns_msg(ansTo_buffer, &dns_msg);
+                    sendto(client_socket, ansTo_buffer, ans_size, 0, (struct sockaddr*)&(pParams->client_addr), addr_len);
+                    debug_print("Send DNS NODOAMIN response to client.");
+                    debug_print("***************************");
+                    free_dns_struct(&dns_msg);
+                    return;
+                }
+                else
+                    set_dns_ans(&dns_msg, ip_addr, dns_msg.question[i].QNAME, dns_msg.question[i].QTYPE);
+            }
+        }
+
+        if(dns_msg.header.ANCOUNT > 0) {
+            ans_size = set_dns_msg(ansTo_buffer, &dns_msg);
+            sendto(client_socket, ansTo_buffer, ans_size, 0, (struct sockaddr*)&(pParams->client_addr), addr_len);
+            debug_print("Send DNS response to client.");
+
+            if(debug_mode == DEBUG_MODE_2){
+                printf("DNS response Message Size: %d\n", ans_size);
+                for (int i = 0; i < ans_size; i++) {
+                    printf("%02x ", (unsigned char)ansTo_buffer[i]);
+                }
+                printf("\n");
+            }
+        }
+        debug_print("***************************");
+        free_dns_struct(&dns_msg);
+}
+
+void ProcessServer(ThreadParams* pParams){
+    uint8_t buffer[BUFFER_SIZE];
+    DNS_DATA dns_msg;
+    int msg_size = -1;
+    msg_size = pParams->msg_size;
+    get_dns_msg(pParams->recv_buffer, &dns_msg);
+        debug_print("---------------------------");
+        debug_print("Receive DNS response from server.");
+        if(debug_mode == DEBUG_MODE_2){
+            printf("Server IP: %s\t", inet_ntoa(server_addr.sin_addr));
+            printf("Port: %d\n", ntohs(server_addr.sin_port));
+        }
+        if(debug_mode == DEBUG_MODE_2){
+            for (int i = 0; i < msg_size; i++) {
+                printf("%02x ", (unsigned char)pParams->recv_buffer[i]);
+            }
+            printf("\n");
+        }
+        debug_print_DNS(&dns_msg);
+        uint16_t ID = dns_msg.header.ID;
+        uint16_t Old_ID = htons(ID_list[ID].client_ID);
+        ID_list[ID].expire_time = 0;
+        memcpy(pParams->recv_buffer, &Old_ID, sizeof(uint16_t));
+
+        sendto(client_socket, pParams->recv_buffer, msg_size, 0, (struct sockaddr*)&(ID_list[ID].client_addr), addr_len);
+        debug_print("Send DNS response to client.");
+        if(debug_mode == DEBUG_MODE_2){
+            printf("Client IP: %s\t", inet_ntoa(ID_list[ID].client_addr.sin_addr));
+            printf("Port: %d\n", ntohs(ID_list[ID].client_addr.sin_port));
+            printf("ID: 0x%x\n", ntohs(Old_ID));
+            for (int i = 0; i < msg_size; i++) {
+                printf("%02x ", (unsigned char)pParams->recv_buffer[i]);
+            }
+            printf("\n");
+        }
+        listen_num--;
+
+        //更新缓存
+        for (int i = 0; i < dns_msg.header.ANCOUNT; i++) {
+            if(dns_msg.answer[i].CLASS == DNS_CLASS_IN && ((dns_msg.answer[i].TYPE == DNS_TYPE_A && dns_msg.answer[i].RDLENGTH == 4) || (dns_msg.answer[i].TYPE == DNS_TYPE_AAAA && dns_msg.answer[i].RDLENGTH == 16))){
+                update_cache(dns_msg.answer[i].RDATA, dns_msg.answer[i].NAME, dns_msg.answer[i].TYPE);
+                write_back_trie(dns_msg.answer[i].NAME, dns_msg.answer[i].RDATA, dns_msg.answer[i].TYPE);
+                update_cache(dns_msg.answer[i].RDATA, dns_msg.question->QNAME, dns_msg.answer[i].TYPE);
+                write_back_trie(dns_msg.question->QNAME, dns_msg.answer[i].RDATA, dns_msg.answer[i].TYPE);
+            }
+        }
+        debug_print("***************************");
+        free_dns_struct(&dns_msg);
+}
+
+void submitToThreadPool(ThreadParams pParams) {
+    EnterCriticalSection(&cs);
+    while (taskQueueSize >= MAX_THREADS) { // 如果队列满，等待
+        SleepConditionVariableCS(&conditionVariable, &cs, INFINITE); // 等待条件变量被唤醒
+    }
+    taskQueue[nextTaskIndex] = pParams;
+    ++taskQueueSize;
+
+    ReleaseSemaphore(taskQueueSemaphore, 1, NULL); // 信号量增加，表示有新任务
+    LeaveCriticalSection(&cs);
+    WakeAllConditionVariable(&conditionVariable); // 唤醒可能在等待的任务
+}
+
+void Thread_receive_client() {
+    char recv_buffer[BUFFER_SIZE];
+    int msg_size = recvfrom(client_socket, recv_buffer, sizeof(recv_buffer), 0, (struct sockaddr*)&client_addr, &addr_len);
+
+    if (msg_size > 0) {
+        ThreadParams params;  // 创建局部结构体变量
+        memcpy(params.recv_buffer, recv_buffer, msg_size);
+        params.client_addr = client_addr;
+        params.msg_size = msg_size;
+        params.client_or_server = 'c';
+        submitToThreadPool(params);  // 通过值传递结构体
+    }
+}
+
+void Thread_receive_server() {
+    uint8_t buffer[BUFFER_SIZE];
+    int msg_size = -1;
+
+    if(listen_num > 0) {
+        msg_size = recvfrom(server_socket, buffer, sizeof(buffer), 0, (struct sockaddr*)&server_addr, &addr_len);
+    }
+
+    if (listen_num > 0 && msg_size > 0) {
+        ThreadParams params;
+        memcpy(params.recv_buffer, buffer, msg_size);
+        params.client_addr = server_addr;
+        params.msg_size = msg_size;
+        params.client_or_server = 's';
+        submitToThreadPool(params);
+    }
 }

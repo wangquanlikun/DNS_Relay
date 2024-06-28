@@ -10,7 +10,7 @@
 #define SUCCESS 1
 #define FAIL 0
 
-#define VERSION "1.0.1"
+#define VERSION "1.1.0"
 
 #define NO_DEBUG 0
 #define DEBUG_MODE_1 1
@@ -20,6 +20,7 @@ extern int debug_mode;
 #define DEFAULT_MODE 1
 #define POLL_MODE 2
 #define ASYNC_MODE 3
+#define MUTI_THREAD_MODE 4
 extern int mode;
 
 #define DEFAULT_ADDRESS "10.3.9.4"
@@ -68,5 +69,15 @@ typedef struct {
 #define MAX_ID_LIST 255
 #define EXPIRE_TIME 30
 ID_conversion ID_list[MAX_ID_LIST]; // ID转换表
+
+typedef struct {
+    struct sockaddr_in client_addr;
+    char recv_buffer[BUFFER_SIZE];
+	int msg_size;
+	char client_or_server;
+} ThreadParams;
+#include <process.h> // For _beginthreadex
+#include <synchapi.h>
+#define MAX_THREADS 16
 
 #endif

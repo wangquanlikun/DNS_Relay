@@ -13,13 +13,55 @@ int char_map[256];
 #define WM_SOCKET (WM_USER + 1)
 HWND hwnd;
 
+HANDLE threadPool[MAX_THREADS];
+CRITICAL_SECTION cs;
+HANDLE taskQueueMutex;
+HANDLE taskQueueSemaphore;
+ThreadParams taskQueue[MAX_THREADS]; // 假设任务队列大小与线程池大小相同
+int nextTaskIndex;
+int taskQueueSize;
+CONDITION_VARIABLE conditionVariable;
+
+void initThreadPool() {
+    InitializeCriticalSection(&cs);
+    taskQueueSemaphore = CreateSemaphore(NULL, 0, MAX_THREADS, NULL);
+    InitializeConditionVariable(&conditionVariable);
+    for (int i = 0; i < MAX_THREADS; ++i) {
+        threadPool[i] = (HANDLE)_beginthreadex(NULL, 0, workerThreadProc, NULL, 0, NULL);
+        if (threadPool[i] == NULL) {
+            printf("Create thread %d failed\n", i);
+        }
+    }
+}
+
+unsigned __stdcall workerThreadProc(void* param) {
+    while (TRUE) {
+        WaitForSingleObject(taskQueueSemaphore, INFINITE);
+        EnterCriticalSection(&cs);
+        int currentIndex = -1;
+        if (taskQueueSize > 0) {
+            currentIndex = nextTaskIndex;
+            nextTaskIndex = (nextTaskIndex + 1) % MAX_THREADS;
+            --taskQueueSize;
+        }
+        LeaveCriticalSection(&cs);
+
+        if (currentIndex != -1) {
+            printf("Thread %d is processing task\n", GetCurrentThreadId());
+            ProcessDNSThread(&taskQueue[currentIndex]);
+            memset(&taskQueue[currentIndex], 0, sizeof(ThreadParams));  // 重置结构体
+        }
+    }
+    return 0;
+}
+
 static void print_info() {
     const char date[] = __DATE__;
     const char time[] = __TIME__;
 
     printf("A Project of BUPT Computer Network Course Design\n\n");
     printf("DNSRELAY, Version %s, Build: %s %s\n", VERSION, date, time);
-    printf("Usage: dnsrelay [ -d | -dd ] [ -m1 | -m2 | -m3 ] [<dns-server>] [<db-file>]\n\n");
+    printf("Usage: dnsrelay [ -d | -dd ] [ -m1 | -m2 | -m3 | -m4 ] [<dns-server>] [<db-file>]\n\n");
     
     printf("Name server: %s:%d.\n", server_ip, port);
     printf("Debug level %d.\n", debug_mode);
@@ -31,6 +73,9 @@ static void print_info() {
     }
     else if(mode == ASYNC_MODE) {
         printf("Running on async mode.\n");
+    }
+    else if(mode == MUTI_THREAD_MODE) {
+        printf("Running on multi-thread mode.\n");
     }
 
     printf("Bind UDP port %d ...", port);
@@ -75,6 +120,9 @@ void set_parameter(int argc, char *argv[]) {
         }
         else if(strcmp(argv[parameter_index], "-m3") == 0){
             mode = ASYNC_MODE;
+        }
+        else if(strcmp(argv[parameter_index], "-m4") == 0){
+            mode = MUTI_THREAD_MODE;
         }
     }
 
@@ -248,7 +296,9 @@ void init_data() {
 void run_server() {
     #ifdef _WIN32
 
-    if(mode == DEFAULT_MODE) {
+    if(mode == DEFAULT_MODE) { // 非阻塞模式
+        /*一种简单的非阻塞模式，通过不断循环检查套接字的状态来接收数据*/
+
         u_long nonBlockingMode = 1;
         int ser_result = ioctlsocket(server_socket, FIONBIO, &nonBlockingMode); // 设置为非阻塞模式
         int cli_result = ioctlsocket(client_socket, FIONBIO, &nonBlockingMode);
@@ -266,7 +316,9 @@ void run_server() {
             receive_server();
         }
     }
-    else if(mode == POLL_MODE) {
+    else if(mode == POLL_MODE) { // 轮询模式
+        /*使用 select 函数来监视多个套接字的状态，并在有数据时进行处理，减少了 CPU 占用*/
+
         fd_set readfds;
         struct timeval tv;
         
@@ -297,8 +349,11 @@ void run_server() {
             }
         }
     }
-    else if(mode == ASYNC_MODE) {
+    else if(mode == ASYNC_MODE) { // 异步模式
+        /*使用 Windows 的异步消息机制，通过窗口消息来处理网络事件*/
+
         // 创建隐藏窗口
+        // 程序创建一个隐藏窗口，并通过窗口过程函数 WindowProc 来处理异步消息。WindowProc 函数检查网络事件并调用相应的接收函数
         WNDCLASS wndClass = { 0 };
         wndClass.lpfnWndProc = WindowProc;
         wndClass.hInstance = GetModuleHandle(NULL);
@@ -314,6 +369,7 @@ void run_server() {
         }
 
         // 设置异步模式
+        // 使用 WSAAsyncSelect 函数将套接字设置为异步模式。当指定的网络事件（如数据到达、连接关闭等）发生时，会向指定的窗口发送一个消息
         if (WSAAsyncSelect(server_socket, hwnd, WM_SOCKET, FD_READ | FD_CLOSE) == SOCKET_ERROR || WSAAsyncSelect(client_socket, hwnd, WM_SOCKET, FD_READ | FD_CLOSE) == SOCKET_ERROR) {
             printf("WSAAsyncSelect failed.\n");
             closesocket(server_socket);
@@ -324,6 +380,7 @@ void run_server() {
         }
 
         // 消息循环
+        // 程序进入消息循环，通过 GetMessage、TranslateMessage 和 DispatchMessage 函数来处理消息
         MSG msg;
         while (GetMessage(&msg, NULL, 0, 0)) {
             TranslateMessage(&msg);
@@ -331,6 +388,25 @@ void run_server() {
         }
 
         DestroyWindow(hwnd);
+    }
+    else if(mode == MUTI_THREAD_MODE) { // 多线程模式
+        u_long nonBlockingMode = 1;
+        int ser_result = ioctlsocket(server_socket, FIONBIO, &nonBlockingMode);
+        int cli_result = ioctlsocket(client_socket, FIONBIO, &nonBlockingMode);
+
+        if(ser_result == SOCKET_ERROR || cli_result == SOCKET_ERROR) {
+            printf("Set default mode failed.\n");
+            closesocket(server_socket);
+            closesocket(client_socket);
+            WSACleanup();
+            exit(1);
+        }
+        // success
+        initThreadPool();
+        while (1) {
+            Thread_receive_client();
+            Thread_receive_server();
+        }
     }
 
     closesocket(server_socket);
