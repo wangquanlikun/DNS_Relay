@@ -10,13 +10,16 @@ extern trie list_trie[TRIE_LIST_SIZE];
 int list_size = 0;
 int char_map[256];
 
+#define WM_SOCKET (WM_USER + 1)
+HWND hwnd;
+
 static void print_info() {
     const char date[] = __DATE__;
     const char time[] = __TIME__;
 
-    printf("SourceCode at https://github.com/wangquanlikun/DNS_Relay. Fork and Star\n\n");
+    printf("A Project of BUPT Computer Network Course Design\n\n");
     printf("DNSRELAY, Version %s, Build: %s %s\n", VERSION, date, time);
-    printf("Usage: dnsrelay [-d | -dd] [-m1 | -m2] [<dns-server>] [<db-file>]\n\n");
+    printf("Usage: dnsrelay [ -d | -dd ] [ -m1 | -m2 | -m3 ] [<dns-server>] [<db-file>]\n\n");
     
     printf("Name server: %s:%d.\n", server_ip, port);
     printf("Debug level %d.\n", debug_mode);
@@ -25,6 +28,9 @@ static void print_info() {
     }
     else if(mode == POLL_MODE) {
         printf("Running on poll mode.\n");
+    }
+    else if(mode == ASYNC_MODE) {
+        printf("Running on async mode.\n");
     }
 
     printf("Bind UDP port %d ...", port);
@@ -66,6 +72,9 @@ void set_parameter(int argc, char *argv[]) {
         }
         else if(strcmp(argv[parameter_index], "-m2") == 0){
             mode = POLL_MODE;
+        }
+        else if(strcmp(argv[parameter_index], "-m3") == 0){
+            mode = ASYNC_MODE;
         }
     }
 
@@ -288,10 +297,82 @@ void run_server() {
             }
         }
     }
+    else if(mode == ASYNC_MODE) {
+        // 创建隐藏窗口
+        WNDCLASS wndClass = { 0 };
+        wndClass.lpfnWndProc = WindowProc;
+        wndClass.hInstance = GetModuleHandle(NULL);
+        wndClass.lpszClassName = "AsyncSocketClass";
+        RegisterClass(&wndClass);
+
+        hwnd = CreateWindow("AsyncSocketClass", "AsyncSocketWindow", 0, 0, 0, 0, 0, HWND_MESSAGE, NULL, GetModuleHandle(NULL), NULL);
+
+        if (!hwnd) {
+            printf("CreateWindow failed.\n");
+            WSACleanup();
+            exit(1);
+        }
+
+        // 设置异步模式
+        if (WSAAsyncSelect(server_socket, hwnd, WM_SOCKET, FD_READ | FD_CLOSE) == SOCKET_ERROR || WSAAsyncSelect(client_socket, hwnd, WM_SOCKET, FD_READ | FD_CLOSE) == SOCKET_ERROR) {
+            printf("WSAAsyncSelect failed.\n");
+            closesocket(server_socket);
+            closesocket(client_socket);
+            WSACleanup();
+            DestroyWindow(hwnd);
+            exit(1);
+        }
+
+        // 消息循环
+        MSG msg;
+        while (GetMessage(&msg, NULL, 0, 0)) {
+            TranslateMessage(&msg);
+            DispatchMessage(&msg);
+        }
+
+        DestroyWindow(hwnd);
+    }
+
+    closesocket(server_socket);
+    closesocket(client_socket);
+    WSACleanup();
+    return;
 
     #else
 
     #endif
+}
+
+LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    if (uMsg == WM_SOCKET) {
+        SOCKET sock = (SOCKET)wParam;
+        int event = LOWORD(lParam);
+        int error = HIWORD(lParam);
+
+        if (error) {
+            printf("Socket error: %d\n", error);
+            closesocket(sock);
+            WSACleanup();
+            PostQuitMessage(1);
+            return 0;
+        }
+
+        if (event & FD_READ) {
+            if (sock == client_socket) {
+                receive_client();
+            } else if (sock == server_socket) {
+                receive_server();
+            }
+        }
+
+        if (event & FD_CLOSE) {
+            closesocket(sock);
+        }
+
+        return 0;
+    }
+
+    return DefWindowProc(hwnd, uMsg, wParam, lParam);
 }
 
 void debug_print(char output_info[]) {

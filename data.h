@@ -19,6 +19,7 @@ extern int debug_mode;
 
 #define DEFAULT_MODE 1
 #define POLL_MODE 2
+#define ASYNC_MODE 3
 extern int mode;
 
 #define DEFAULT_ADDRESS "10.3.9.4"

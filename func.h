@@ -2,6 +2,7 @@
 #define FUNC_H
 
 #include <stdint.h>
+#include <winsock2.h>
 #include "dns_data.h"
 
 void set_parameter(int argc, char *argv[]); //设置程序命令参数
@@ -18,6 +19,7 @@ void debug_print_DNS(const DNS_DATA* dns_msg); //调试输出DNS报文
 void run_server(); 
 void receive_client();
 void receive_server();
+LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 
 void get_dns_msg(char recv_buffer[], DNS_DATA* dns_msg); //解析DNS报文
 void free_dns_struct(DNS_DATA* dns_data); //释放DNS_DATA结构体
