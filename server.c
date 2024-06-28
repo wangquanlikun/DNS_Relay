@@ -317,22 +317,34 @@ void free_dns_struct(DNS_DATA* dns_data){
         free(dns_data->question);
     }
     if(dns_data->answer != NULL){
-        if(dns_data->answer->RDATA != NULL){
-            free(dns_data->answer->RDATA);
+        if(dns_data->header.ANCOUNT != 0){
+            for (int i = 0; i < dns_data->header.ANCOUNT; i++){
+                if(dns_data->answer[i].RDATA != NULL && dns_data->answer[i].RDLENGTH != 0){
+                    free(dns_data->answer[i].RDATA);
+                }
+            }
+            free(dns_data->answer);
         }
-        free(dns_data->answer);
     }
     if(dns_data->authority != NULL){
-        if(dns_data->authority->RDATA != NULL){
-            free(dns_data->authority->RDATA);
+        if(dns_data->header.NSCOUNT != 0){
+            for (int i = 0; i < dns_data->header.NSCOUNT; i++){
+                if(dns_data->authority[i].RDATA != NULL && dns_data->authority[i].RDLENGTH != 0){
+                    free(dns_data->authority[i].RDATA);
+                }
+            }
+            free(dns_data->authority);
         }
-        free(dns_data->authority);
     }
     if(dns_data->additional != NULL){
-        if(dns_data->additional->RDATA != NULL){
-            free(dns_data->additional->RDATA);
+        if(dns_data->header.ARCOUNT != 0){
+            for (int i = 0; i < dns_data->header.ARCOUNT; i++){
+                if(dns_data->additional[i].RDATA != NULL && dns_data->additional[i].RDLENGTH != 0){
+                    free(dns_data->additional[i].RDATA);
+                }
+            }
+            free(dns_data->additional);
         }
-        free(dns_data->additional);
     }
     return;
 }

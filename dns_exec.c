@@ -160,14 +160,14 @@ void receive_server() {
     return;
 }
 
-void get_domain_name(char* recv_buffer, char* domain_name, char* ptr, int n, char** init_ptr, char can_plus_ptr) {
+void get_domain_name(char * const recv_buffer, char* domain_name, char* ptr, int n, char** init_ptr, char can_plus_ptr) {
     if ((ptr)[0] == 0) {
         if (can_plus_ptr == 1)
             (*init_ptr)++;
         return;
     }
     if (((ptr)[0] & 0xc0) == 0xc0) {
-        int offset = (((ptr)[0] & 0x3f) << 8) + (ptr)[1];
+        unsigned short offset = (((unsigned char)(ptr[0]) & 0x3f) << 8) + (unsigned char)(ptr[1]);
         if (can_plus_ptr == 1)
             (*init_ptr) += 2;
         char* temp_ptr1 = recv_buffer + offset;
@@ -537,6 +537,7 @@ void update_cache(uint8_t ip_addr[], char domain[], uint16_t QTYPE) {
         }
         free(ptr->next);
         ptr->next = NULL;
+        cache_size--;
     }
 
     cache_size++;
